@@ -3,9 +3,8 @@ import { useState, useRef } from 'react';
 import { Plus, Search, Filter, UploadCloud, Loader2 } from 'lucide-react';
 import { Transaction } from '@/types/finance';
 
-// --- IMPORTANTE: Aquí importamos los componentes modularizados ---
-import { TransactionTable } from './TransactionTable';
-import { TransactionForm } from './TransactionForm';
+import { TransactionTable } from '../transactions/TransactionTable';
+import { TransactionForm } from '../transactions/TransactionForm';
 
 export const TransactionManager = () => {
   // --- ESTADO GLOBAL (Simulación DB) ---
@@ -22,22 +21,18 @@ export const TransactionManager = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Transaction | null>(null);
-  
-  // Estado para subida de archivos (IA)
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- ACTIONS (Lógica de Negocio) ---
+  // --- ACTIONS ---
   const handleSave = (data: Partial<Transaction>) => {
     if (editingItem) {
-      // Editar existente
       setTransactions(prev => prev.map(t => t.id === editingItem.id ? { ...t, ...data } as Transaction : t));
     } else {
-      // Crear nuevo
       const newTx = { ...data, id: Date.now().toString() } as Transaction;
       setTransactions(prev => [...prev, newTx]);
     }
-    setEditingItem(null); // Limpiar selección
+    setEditingItem(null);
   };
 
   const handleEdit = (item: Transaction) => {
@@ -51,26 +46,68 @@ export const TransactionManager = () => {
     }
   };
 
+  // --- FUNCIÓN DE DEDUPLICACIÓN ---
+  // Verifica si ya existe una transacción con misma fecha, monto y descripción similar
+  const isDuplicate = (newTx: Transaction, currentList: Transaction[]) => {
+    return currentList.some(existing => 
+      existing.date === newTx.date &&
+      Math.abs(existing.originalAmount - newTx.originalAmount) < 0.01 && // Tolerancia mínima por decimales
+      existing.description.toLowerCase().trim() === newTx.description.toLowerCase().trim()
+    );
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsUploading(true);
     
-    // Simulación IA
+    // Simulación de IA / API
     setTimeout(() => {
-      const mockData: Transaction[] = [{ 
-         id: Date.now().toString(), date: '2026-02-10', description: 'Uber *Trip - Autoimportado', category: 'Movilidad', type: 'expense',
-         originalAmount: 25.50, originalCurrency: 'BRL', exchangeRate: 0.185, amountUSD: 4.71
-      }];
-      setTransactions(prev => [...prev, ...mockData]);
+      const mockDataFromAI: Transaction[] = [
+         // Caso 1: Duplicado (simulamos que viene el Uber que ya insertamos antes)
+         { 
+           id: 'temp_1', date: '2026-02-10', description: 'Uber *Trip - Autoimportado', 
+           category: 'Movilidad', type: 'expense',
+           originalAmount: 25.50, originalCurrency: 'BRL', exchangeRate: 0.185, amountUSD: 4.71
+         },
+         // Caso 2: Nuevo
+         { 
+           id: 'temp_2', date: '2026-02-15', description: 'Compra Supermercado Detectada', 
+           category: 'Supermercado', type: 'expense',
+           originalAmount: 150.00, originalCurrency: 'BRL', exchangeRate: 0.185, amountUSD: 27.75
+         }
+      ];
+
+      // FILTRAR DUPLICADOS
+      const newUniqueTransactions = mockDataFromAI.filter(newTx => {
+        const exists = isDuplicate(newTx, transactions);
+        if (exists) console.log(`[Duplicado omitido] ${newTx.description}`);
+        return !exists;
+      });
+
+      // AGREGAR SOLO LOS NUEVOS
+      if (newUniqueTransactions.length > 0) {
+          const finalTransactions = newUniqueTransactions.map(t => ({
+              ...t, 
+              // Generar ID real único
+              id: Date.now().toString() + Math.floor(Math.random() * 1000)
+          }));
+          
+          setTransactions(prev => [...prev, ...finalTransactions]);
+          alert(`✅ Se importaron ${finalTransactions.length} movimientos nuevos.`);
+      } else {
+          alert("⚠️ No se encontraron movimientos nuevos (todos ya existían).");
+      }
+
       setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = ''; // Limpiar input
     }, 2000);
   };
 
   return (
     <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-6 overflow-hidden h-full flex flex-col">
       
-      {/* HEADER Y ACCIONES */}
+      {/* HEADER */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-6">
         <div>
           <h2 className="text-xl font-black text-slate-800">Gestión de Movimientos</h2>
@@ -78,7 +115,6 @@ export const TransactionManager = () => {
         </div>
         
         <div className="flex gap-3 w-full xl:w-auto">
-          {/* Botón Subir Cartola */}
           <div className="relative">
              <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
              <button 
@@ -91,7 +127,6 @@ export const TransactionManager = () => {
              </button>
           </div>
           
-          {/* Botón Nueva Transacción */}
           <button 
             onClick={() => { setEditingItem(null); setIsModalOpen(true); }} 
             className="bg-slate-900 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-800 shadow-lg active:scale-95 transition-all"
@@ -101,7 +136,7 @@ export const TransactionManager = () => {
         </div>
       </div>
 
-      {/* FILTROS (Visual) */}
+      {/* FILTROS */}
       <div className="flex gap-3 mb-6">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -110,14 +145,12 @@ export const TransactionManager = () => {
         <button className="p-2 bg-slate-50 rounded-xl text-slate-500 hover:bg-slate-100"><Filter size={18}/></button>
       </div>
 
-      {/* TABLA (Componente Hijo) */}
       <TransactionTable 
         transactions={transactions} 
         onEdit={handleEdit} 
         onDelete={handleDelete} 
       />
       
-      {/* FORMULARIO MODAL (Componente Hijo con Banderas) */}
       <TransactionForm 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
