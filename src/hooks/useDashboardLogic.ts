@@ -1,18 +1,25 @@
 'use client';
 
 import { useState, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation'; // <--- IMPORTANTE
+import { createClient } from '@/lib/supabase/client'; // <--- IMPORTANTE
 import { Transaction } from '@/types/finance';
 import { useExchangeRates } from '@/hooks/useExchangeRates';
 
 export const useDashboardLogic = () => {
+  // --- AUTH & ROUTING ---
+  const router = useRouter();
+  const supabase = createClient();
+
   // --- UI STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<'dash' | 'transactions' | 'settings'>('dash');
+  // ... resto de tus estados ...
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- BUSINESS STATE ---
+  // ... (MANTÉN TODO EL ESTADO DE BUSINESS, FILTROS Y CONFIG IGUAL QUE ANTES) ...
   const [transactions, setTransactions] = useState<Transaction[]>([
     { 
       id: '1', date: '2026-01-15', description: 'Ingreso Inicial Simulado', category: 'Sumadots - Retainer', type: 'income',
@@ -24,7 +31,6 @@ export const useDashboardLogic = () => {
     },
   ]);
 
-  // --- FILTROS & CONFIGURACIÓN ---
   const [periodFilter, setPeriodFilter] = useState<'Mensual' | 'Trimestral' | 'Anual'>('Anual');
   const [scenario, setScenario] = useState<'base' | 'worst' | 'best'>('base');
   const [selectedYear, setSelectedYear] = useState<number>(2026);
@@ -34,9 +40,16 @@ export const useDashboardLogic = () => {
   const [currentCash, setCurrentCash] = useState(18500);    
 
   const monthlyPlan = annualBudget / 12;
-  const { rates } = useExchangeRates(); // Para uso futuro si se requiere
+  const { rates } = useExchangeRates(); 
 
-  // --- MEMOS: AÑOS DISPONIBLES ---
+  // --- NEW: LOGOUT FUNCTION ---
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+    router.refresh();
+  };
+
+  // ... (MANTÉN LOS USEMEMO Y FUNCIONES DE UPLOAD IGUALES) ...
   const availableYears = useMemo(() => {
     const years = new Set(transactions.map(t => new Date(t.date).getFullYear()));
     years.add(2025);
@@ -44,12 +57,10 @@ export const useDashboardLogic = () => {
     return Array.from(years).sort((a, b) => b - a);
   }, [transactions]);
 
-  // --- MEMOS: TRANSACCIONES FILTRADAS ---
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => new Date(t.date).getFullYear() === selectedYear);
   }, [transactions, selectedYear]);
 
-  // --- LOGICA SUBIDA ARCHIVOS ---
   const isDuplicate = (newTx: Transaction, currentList: Transaction[]) => {
     return currentList.some(existing => 
       existing.date === newTx.date &&
@@ -102,7 +113,6 @@ export const useDashboardLogic = () => {
     }
   };
 
-  // --- MEMOS: DATOS GRÁFICO (PROYECCIÓN) ---
   const projectedData = useMemo(() => {
     const monthlyExpenses = new Array(12).fill(0);
     
@@ -151,7 +161,6 @@ export const useDashboardLogic = () => {
     });
   }, [scenario, monthlyPlan, periodFilter, filteredTransactions, selectedYear]);
 
-  // --- MEMOS: KPIs ---
   const kpiData = useMemo(() => {
     const currentMonth = new Date().getMonth();
     const isCurrentYear = selectedYear === new Date().getFullYear();
@@ -180,6 +189,9 @@ export const useDashboardLogic = () => {
   }, [monthlyPlan, currentCash, scenario, monthlyIncome, filteredTransactions, selectedYear]);
 
   return {
+    // Auth
+    handleLogout, // <--- EXPORTAMOS LA FUNCIÓN
+
     // UI State
     sidebarOpen, setSidebarOpen,
     activeView, setActiveView,

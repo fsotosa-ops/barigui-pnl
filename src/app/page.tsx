@@ -12,7 +12,7 @@ import { TransactionManager } from '@/components/finance/transactions/Transactio
 import { CurrencyTicker } from '@/components/dashboard/CurrencyTicker';
 import { FinancialSettings } from '@/components/finance/FinancialSettings';
 
-// Importamos nuestra nueva lógica
+// Importamos nuestra nueva lógica centralizada
 import { useDashboardLogic } from '@/hooks/useDashboardLogic';
 
 interface Task {
@@ -24,10 +24,10 @@ interface Task {
 }
 
 export default function OperationalDash() {
-  // Aquí consumimos toda la lógica del hook. ¡Limpio!
+  // Consumimos toda la lógica del hook
   const logic = useDashboardLogic();
 
-  // Datos estáticos (pueden moverse a constantes si quieres)
+  // Datos estáticos para ActionCenter
   const initialBlockers: Task[] = [
     { id: 1, title: 'Habilitar Cuenta Internacional', completed: false, blocked: true, blockerDescription: 'Banco requiere estatutos.' },
   ];
@@ -35,12 +35,13 @@ export default function OperationalDash() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex">
       
-      {/* SIDEBAR */}
+      {/* SIDEBAR CON LOGOUT CONECTADO */}
       <Sidebar 
         isOpen={logic.sidebarOpen} 
         toggle={() => logic.setSidebarOpen(!logic.sidebarOpen)} 
         activeView={logic.activeView} 
         setView={logic.setActiveView} 
+        onLogout={logic.handleLogout}
       />
 
       <main className={`flex-1 transition-all duration-300 ${logic.sidebarOpen ? 'ml-64' : 'ml-20'} p-8`}>
@@ -106,7 +107,7 @@ export default function OperationalDash() {
                     </div>
 
                     <div className="flex items-center gap-4">
-                        {/* SELECTOR DE AÑO */}
+                        {/* SELECTOR DE AÑO INTEGRADO */}
                         <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-xl">
                             <span className="text-[10px] font-bold text-slate-400 uppercase">Año:</span>
                             <select 
@@ -120,7 +121,7 @@ export default function OperationalDash() {
 
                         <div className="w-px h-6 bg-slate-100 mx-2"></div>
 
-                        {/* ESCENARIOS */}
+                        {/* ESCENARIOS Y RUNWAY */}
                         <div className="flex items-center gap-4 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
                             <div className="flex gap-1">
                                 {(['base', 'worst', 'best'] as const).map((s) => (

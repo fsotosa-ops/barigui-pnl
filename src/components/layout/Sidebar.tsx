@@ -14,9 +14,10 @@ interface SidebarProps {
   toggle: () => void;
   activeView: string;
   setView: (view: 'dash' | 'transactions' | 'settings') => void;
+  onLogout?: () => void; // <--- NUEVA PROP OPCIONAL
 }
 
-export const Sidebar = ({ isOpen, toggle, activeView, setView }: SidebarProps) => {
+export const Sidebar = ({ isOpen, toggle, activeView, setView, onLogout }: SidebarProps) => {
   const menuItems = [
     { id: 'dash', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
     { id: 'transactions', label: 'Movimientos', icon: <ListOrdered size={20} /> },
@@ -66,7 +67,6 @@ export const Sidebar = ({ isOpen, toggle, activeView, setView }: SidebarProps) =
               {item.label}
             </span>
             
-            {/* Tooltip cuando está colapsado */}
             {!isOpen && (
               <div className="absolute left-16 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none z-50 whitespace-nowrap">
                 {item.label}
@@ -76,9 +76,12 @@ export const Sidebar = ({ isOpen, toggle, activeView, setView }: SidebarProps) =
         ))}
       </nav>
 
-      {/* Footer */}
+      {/* Footer / Logout */}
       <div className="p-4 border-t border-slate-800">
-        <button className="w-full flex items-center gap-4 p-3 text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors">
+        <button 
+          onClick={onLogout} // <--- CONECTAMOS EL EVENTO
+          className="w-full flex items-center gap-4 p-3 text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors"
+        >
           <LogOut size={20} />
           <span className={`text-sm font-bold overflow-hidden transition-all ${isOpen ? 'w-auto opacity-100' : 'w-0 opacity-0'}`}>
             Salir
