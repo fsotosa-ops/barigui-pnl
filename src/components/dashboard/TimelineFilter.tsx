@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { BarChart3, TrendingUp } from 'lucide-react';
+import { TrendingUp } from 'lucide-react';
 import { ScenarioSelector } from './ScenarioSelector';
 
 interface PeriodData {
@@ -9,6 +9,7 @@ interface PeriodData {
   real: number;
 }
 
+// 1. Agregamos 'headless' como opcional (?) y booleano
 interface TimelineFilterProps {
   data: PeriodData[];
   period: 'Mensual' | 'Trimestral' | 'Anual';
@@ -16,9 +17,18 @@ interface TimelineFilterProps {
   scenario: 'base' | 'worst' | 'best';
   setScenario: (s: 'base' | 'worst' | 'best') => void;
   runway: number;
+  headless?: boolean; // <--- NUEVA PROPIEDAD
 }
 
-export const TimelineFilter = ({ data, period, setPeriod, scenario, setScenario, runway }: TimelineFilterProps) => {
+export const TimelineFilter = ({ 
+  data, 
+  period, 
+  setPeriod, 
+  scenario, 
+  setScenario, 
+  runway,
+  headless = false // Valor por defecto false
+}: TimelineFilterProps) => {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const height = 220;
@@ -56,47 +66,51 @@ export const TimelineFilter = ({ data, period, setPeriod, scenario, setScenario,
   const planPath = buildPath('plan');
   const realPath = buildPath('real');
   
-  // Color según cumplimiento
   const lastPoint = data[data.length - 1] || { real: 0, plan: 0 };
   const isOverBudget = lastPoint.real > lastPoint.plan;
   const themeColor = isOverBudget ? '#f43f5e' : '#10b981'; 
 
   return (
-    <section className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
+    // 2. Si es headless, quitamos el borde, padding y sombra para que se integre en el contenedor padre
+    <section className={headless ? "relative w-full" : "bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden"}>
       
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4 z-10 relative">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-             <TrendingUp className={isOverBudget ? "text-rose-500" : "text-emerald-500"} size={20} />
-             <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Flujo Acumulado</h3>
-          </div>
-          <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-            {['Mensual', 'Trimestral', 'Anual'].map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p as any)}
-                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase transition-all ${
-                  period === p ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
-            <ScenarioSelector current={scenario} onChange={setScenario} />
-            <div className="w-px h-6 bg-slate-200"></div>
-            <div className="px-3 text-right">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Runway</p>
-              <p className={`text-lg font-black leading-none ${runway < 4 ? 'text-rose-500' : 'text-slate-900'}`}>
-                {runway}m
-              </p>
+      {/* 3. Ocultamos todo el Header antiguo si headless es true */}
+      {!headless && (
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4 z-10 relative">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingUp className={isOverBudget ? "text-rose-500" : "text-emerald-500"} size={20} />
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Flujo Acumulado</h3>
             </div>
-        </div>
-      </div>
+            <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
+              {['Mensual', 'Trimestral', 'Anual'].map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p as any)}
+                  className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase transition-all ${
+                    period === p ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
 
+          <div className="flex items-center gap-4 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
+              <ScenarioSelector current={scenario} onChange={setScenario} />
+              <div className="w-px h-6 bg-slate-200"></div>
+              <div className="px-3 text-right">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Runway</p>
+                <p className={`text-lg font-black leading-none ${runway < 4 ? 'text-rose-500' : 'text-slate-900'}`}>
+                  {runway}m
+                </p>
+              </div>
+          </div>
+        </div>
+      )}
+
+      {/* SVG del Gráfico (Se mantiene igual) */}
       <div className="relative w-full aspect-[21/9] min-h-[220px]">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
             <defs>
@@ -110,26 +124,22 @@ export const TimelineFilter = ({ data, period, setPeriod, scenario, setScenario,
                 </linearGradient>
             </defs>
 
-            {/* Grid */}
             {[0, 0.25, 0.5, 0.75, 1].map((tick) => (
                 <line key={tick} x1="0" y1={getY(maxVal * tick)} x2={width} y2={getY(maxVal * tick)} stroke="#f1f5f9" strokeWidth="1" strokeDasharray="4 4" />
             ))}
 
-            {/* AREA PLAN (Fondo) */}
             <path d={buildArea(planPath)} fill="url(#gradientPlan)" />
             <path d={planPath} fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 4" />
 
-            {/* AREA REAL (Frente) */}
             <path d={buildArea(realPath)} fill="url(#gradientReal)" />
             <path d={realPath} fill="none" stroke={themeColor} strokeWidth="3" strokeLinecap="round" />
 
-            {/* Puntos Interactivos */}
             {data.map((d, i) => (
                 <g key={i} onMouseEnter={() => setHoverIndex(i)} onMouseLeave={() => setHoverIndex(null)}>
                     <circle cx={getX(i)} cy={getY(d.real)} r="30" fill="transparent" cursor="pointer" />
                     <circle 
                         cx={getX(i)} cy={getY(d.real)} 
-                        r={hoverIndex === i ? 6 : 0} // Solo visible en hover
+                        r={hoverIndex === i ? 6 : 0} 
                         fill="white" stroke={themeColor} strokeWidth="2"
                         className="transition-all duration-200"
                     />
@@ -143,14 +153,14 @@ export const TimelineFilter = ({ data, period, setPeriod, scenario, setScenario,
             ))}
         </div>
 
-        {/* TOOLTIP INTELIGENTE (Detecta bordes) */}
+        {/* TOOLTIP */}
         {hoverIndex !== null && (
             <div 
                 className="absolute top-0 pointer-events-none bg-slate-900/95 backdrop-blur text-white p-3 rounded-xl shadow-2xl z-50 transition-all duration-100 min-w-[140px]"
                 style={{ 
                     left: `${(hoverIndex / (data.length - 1)) * 100}%`, 
                     top: '15%',
-                    transform: hoverIndex > data.length / 2 ? 'translate(-105%, 0)' : 'translate(5%, 0)' // Evita que se salga a la derecha
+                    transform: hoverIndex > data.length / 2 ? 'translate(-105%, 0)' : 'translate(5%, 0)' 
                 }}
             >
                 <p className="text-[10px] font-bold text-slate-400 mb-2 uppercase tracking-widest border-b border-slate-700 pb-1">
@@ -165,12 +175,6 @@ export const TimelineFilter = ({ data, period, setPeriod, scenario, setScenario,
                        <span className="text-slate-400 flex items-center gap-1"><span className={`w-2 h-2 rounded-full ${isOverBudget ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>Real</span> 
                        <span className={`font-mono font-bold ${data[hoverIndex].real > data[hoverIndex].plan ? 'text-rose-400' : 'text-emerald-400'}`}>
                          ${data[hoverIndex].real.toLocaleString()}
-                       </span>
-                    </div>
-                    <div className="flex justify-between items-center pt-1 mt-1 border-t border-slate-700">
-                       <span className="text-[10px] text-slate-500">Var.</span>
-                       <span className="font-mono text-[10px] text-slate-300">
-                         {((data[hoverIndex].real / data[hoverIndex].plan - 1) * 100).toFixed(1)}%
                        </span>
                     </div>
                 </div>

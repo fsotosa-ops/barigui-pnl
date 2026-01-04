@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Plus, ShieldAlert } from 'lucide-react';
+import { Plus, UploadCloud, Loader2, Calendar } from 'lucide-react';
 
-// Componentes
+// Componentes Visuales
 import { Sidebar } from '@/components/layout/Sidebar';
 import { MetricGrid } from '@/components/dashboard/MetricGrid';
 import { TimelineFilter } from '@/components/dashboard/TimelineFilter';
@@ -11,10 +10,10 @@ import { ActionCenter } from '@/components/goals/ActionCenter';
 import { QuickEntry } from '@/components/finance/QuickEntry';
 import { TransactionManager } from '@/components/finance/transactions/TransactionManager';
 import { CurrencyTicker } from '@/components/dashboard/CurrencyTicker';
-// IMPORTAMOS EL NUEVO MODULO
 import { FinancialSettings } from '@/components/finance/FinancialSettings';
 
-import { useExchangeRates } from '@/hooks/useExchangeRates';
+// Importamos nuestra nueva lógica
+import { useDashboardLogic } from '@/hooks/useDashboardLogic';
 
 interface Task {
   id: number;
@@ -25,155 +24,165 @@ interface Task {
 }
 
 export default function OperationalDash() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activeView, setActiveView] = useState<'dash' | 'transactions' | 'settings'>('dash');
-  const [isEntryOpen, setIsEntryOpen] = useState(false);
+  // Aquí consumimos toda la lógica del hook. ¡Limpio!
+  const logic = useDashboardLogic();
 
-  const [periodFilter, setPeriodFilter] = useState<'Mensual' | 'Trimestral' | 'Anual'>('Anual');
-  const [scenario, setScenario] = useState<'base' | 'worst' | 'best'>('base');
-
-  // --- VARIABLES FINANCIERAS (ESTADO) ---
-  // Están inicializadas con valores "quemados" para que veas algo al cargar la página
-  const [annualBudget, setAnnualBudget] = useState(31200); 
-  const [monthlyIncome, setMonthlyIncome] = useState(4500); 
-  const [currentCash, setCurrentCash] = useState(18500);    
-
-  const monthlyPlan = annualBudget / 12;
-  const { rates, loading: ratesLoading } = useExchangeRates();
-
-  // --- LÓGICA DE PROYECCIÓN ---
-  const projectedData = useMemo(() => {
-    const baseMonths = [
-      { label: 'Ene', real: 2450 }, { label: 'Feb', real: 2800 },
-      { label: 'Mar', real: 2500 }, { label: 'Abr', real: 2600 },
-      { label: 'May', real: 2600 }, { label: 'Jun', real: 2700 },
-      { label: 'Jul', real: 0 },    { label: 'Ago', real: 0 },
-      { label: 'Sep', real: 0 },    { label: 'Oct', real: 0 },
-      { label: 'Nov', real: 0 },    { label: 'Dic', real: 0 },
-    ];
-
-    let expenseMultiplier = 1;
-    if (scenario === 'worst') expenseMultiplier = 1.20;
-    if (scenario === 'best') expenseMultiplier = 0.90;
-
-    let dataToProcess: { label: string; real: number }[] = [];
-
-    if (periodFilter === 'Mensual') {
-      dataToProcess = baseMonths.slice(0, 6);
-    } else if (periodFilter === 'Trimestral') {
-      const quarters = [
-        { label: 'Q1', months: [0, 1, 2] },
-        { label: 'Q2', months: [3, 4, 5] },
-        { label: 'Q3', months: [6, 7, 8] },
-        { label: 'Q4', months: [9, 10, 11] },
-      ];
-      dataToProcess = quarters.map(q => {
-        const sumReal = q.months.reduce((acc, idx) => acc + (baseMonths[idx]?.real || 0), 0);
-        return { label: q.label, real: sumReal };
-      });
-    } else {
-      dataToProcess = baseMonths;
-    }
-
-    let accumPlan = 0;
-    let accumReal = 0;
-    const stepPlan = periodFilter === 'Trimestral' ? monthlyPlan * 3 : monthlyPlan;
-
-    return dataToProcess.map((d) => {
-      accumPlan += stepPlan; 
-      if (d.real > 0) {
-          accumReal += Math.round(d.real * expenseMultiplier);
-      } 
-      return {
-        label: d.label,
-        plan: Math.round(accumPlan),
-        real: Math.round(accumReal) 
-      };
-    });
-  }, [scenario, monthlyPlan, periodFilter]);
-
-  // --- KPIs ---
-  const currentRunway = useMemo(() => {
-    let projectedMonthlyBurn = monthlyPlan;
-    if (scenario === 'worst') projectedMonthlyBurn *= 1.20;
-    if (scenario === 'best') projectedMonthlyBurn *= 0.90;
-    
-    if (projectedMonthlyBurn === 0) return 0;
-    return parseFloat((currentCash / projectedMonthlyBurn).toFixed(1));
-  }, [scenario, monthlyPlan, currentCash]);
-
-  const kpiData = useMemo(() => {
-    let currentMonthExpense = 2700; // Simulado
-    if (scenario === 'worst') currentMonthExpense *= 1.2;
-    if (scenario === 'best') currentMonthExpense *= 0.9;
-
-    const variance = Number((monthlyPlan - currentMonthExpense).toFixed(0));
-    const savingsRate = monthlyIncome > 0 
-      ? Math.round(((monthlyIncome - currentMonthExpense) / monthlyIncome) * 100) 
-      : 0;
-
-    return { variance, runway: currentRunway, savingsRate };
-  }, [monthlyPlan, currentRunway, scenario, monthlyIncome]);
-
+  // Datos estáticos (pueden moverse a constantes si quieres)
   const initialBlockers: Task[] = [
     { id: 1, title: 'Habilitar Cuenta Internacional', completed: false, blocked: true, blockerDescription: 'Banco requiere estatutos.' },
-    { id: 2, title: 'Optimizar Costo Fijo Chile', completed: false, blocked: false },
   ];
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex">
-      <Sidebar isOpen={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} activeView={activeView} setView={setActiveView} />
+      
+      {/* SIDEBAR */}
+      <Sidebar 
+        isOpen={logic.sidebarOpen} 
+        toggle={() => logic.setSidebarOpen(!logic.sidebarOpen)} 
+        activeView={logic.activeView} 
+        setView={logic.setActiveView} 
+      />
 
-      <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-20'} p-8`}>
+      <main className={`flex-1 transition-all duration-300 ${logic.sidebarOpen ? 'ml-64' : 'ml-20'} p-8`}>
         
+        {/* HEADER GLOBAL */}
         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-4">
           <div>
             <h1 className="text-2xl font-black text-slate-900 capitalize tracking-tight">
-              {activeView === 'dash' ? 'Panel de Control CFO' : activeView === 'transactions' ? 'Movimientos' : 'Configuración'}
+              {logic.activeView === 'dash' ? 'Panel de Control CFO' : logic.activeView === 'transactions' ? 'Movimientos' : 'Configuración'}
             </h1>
             <p className="text-sm text-slate-400 mt-1">
-              Plan Mensual: <span className="font-medium text-slate-600">${monthlyPlan.toLocaleString('en-US', {maximumFractionDigits: 0})}</span>
+              Plan Mensual: <span className="font-medium text-slate-600">${logic.monthlyPlan.toLocaleString('en-US', {maximumFractionDigits: 0})}</span>
             </p>
           </div>
-          <div className="self-end xl:self-auto"><CurrencyTicker /></div>
+          
+          <div className="flex items-center gap-4 self-end xl:self-auto">
+             <CurrencyTicker />
+             
+             {/* BOTÓN SUBIR CARTOLA */}
+             <div className="relative">
+               <input type="file" className="hidden" ref={logic.fileInputRef} onChange={logic.handleFileUpload} accept=".png,.jpg,.jpeg,.csv,.xlsx,.xls" />
+               <button 
+                 onClick={() => logic.fileInputRef.current?.click()}
+                 disabled={logic.isUploading}
+                 className="bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-full border border-slate-200 shadow-sm font-bold text-xs flex items-center gap-2 transition-all"
+               >
+                 {logic.isUploading ? <Loader2 size={16} className="animate-spin"/> : <UploadCloud size={16}/>}
+                 {logic.isUploading ? 'Procesando...' : 'Subir Cartola'}
+               </button>
+             </div>
+          </div>
         </header>
 
+        {/* CONTENIDO PRINCIPAL */}
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
           
-          {activeView === 'dash' && (
+          {logic.activeView === 'dash' && (
             <>
-              <MetricGrid data={kpiData} />
-              <TimelineFilter 
-                data={projectedData} 
-                period={periodFilter} 
-                setPeriod={setPeriodFilter}
-                scenario={scenario}
-                setScenario={setScenario}
-                runway={currentRunway}
-              />
+              <MetricGrid data={logic.kpiData} />
+              
+              {/* CONTENEDOR GRÁFICO CON BARRA DE HERRAMIENTAS INTEGRADA */}
+              <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
+                 
+                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4 z-10 relative">
+                    <div className="flex items-center gap-6">
+                        <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                           <Calendar size={18} className="text-slate-400"/>
+                           Flujo Acumulado
+                        </h3>
+                        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+                          {['Mensual', 'Trimestral', 'Anual'].map((p) => (
+                            <button
+                              key={p}
+                              onClick={() => logic.setPeriodFilter(p as any)}
+                              className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase transition-all ${
+                                logic.periodFilter === p ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          ))}
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        {/* SELECTOR DE AÑO */}
+                        <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-xl">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Año:</span>
+                            <select 
+                              value={logic.selectedYear} 
+                              onChange={(e) => logic.setSelectedYear(Number(e.target.value))}
+                              className="bg-transparent text-xs font-black text-slate-700 outline-none cursor-pointer appearance-none"
+                            >
+                              {logic.availableYears.map(year => <option key={year} value={year}>{year}</option>)}
+                            </select>
+                        </div>
+
+                        <div className="w-px h-6 bg-slate-100 mx-2"></div>
+
+                        {/* ESCENARIOS */}
+                        <div className="flex items-center gap-4 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
+                            <div className="flex gap-1">
+                                {(['base', 'worst', 'best'] as const).map((s) => (
+                                    <button
+                                    key={s}
+                                    onClick={() => logic.setScenario(s)}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${
+                                        logic.scenario === s 
+                                        ? 'bg-white text-slate-900 shadow-sm' 
+                                        : 'text-slate-400 hover:text-slate-600'
+                                    }`}
+                                    >
+                                    {s === 'base' ? 'Base' : s === 'worst' ? 'Crisis' : 'Ideal'}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="w-px h-6 bg-slate-200"></div>
+                            <div className="px-3 text-right">
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Runway</p>
+                              <p className={`text-lg font-black leading-none ${logic.kpiData.runway < 4 ? 'text-rose-500' : 'text-slate-900'}`}>
+                                {logic.kpiData.runway}m
+                              </p>
+                            </div>
+                        </div>
+                    </div>
+                 </div>
+
+                 <TimelineFilter 
+                    data={logic.projectedData} 
+                    period={logic.periodFilter} 
+                    setPeriod={logic.setPeriodFilter} 
+                    scenario={logic.scenario} 
+                    setScenario={logic.setScenario} 
+                    runway={logic.kpiData.runway}
+                    headless={true} 
+                 />
+              </div>
+
               <div className="pt-2"><ActionCenter tasks={initialBlockers} /></div>
             </>
           )}
 
-          {activeView === 'transactions' && <TransactionManager />}
+          {logic.activeView === 'transactions' && (
+            <TransactionManager 
+              transactions={logic.transactions} 
+              setTransactions={logic.setTransactions} 
+            />
+          )}
 
-          {/* COMPONENTE MODULARIZADO */}
-          {activeView === 'settings' && (
+          {logic.activeView === 'settings' && (
             <FinancialSettings 
-              annualBudget={annualBudget}
-              setAnnualBudget={setAnnualBudget}
-              monthlyIncome={monthlyIncome}
-              setMonthlyIncome={setMonthlyIncome}
-              currentCash={currentCash}
-              setCurrentCash={setCurrentCash}
+              annualBudget={logic.annualBudget} setAnnualBudget={logic.setAnnualBudget}
+              monthlyIncome={logic.monthlyIncome} setMonthlyIncome={logic.setMonthlyIncome}
+              currentCash={logic.currentCash} setCurrentCash={logic.setCurrentCash}
             />
           )}
 
         </div>
       </main>
 
-      <button onClick={() => setIsEntryOpen(true)} className="fixed bottom-10 right-10 bg-slate-900 text-white w-14 h-14 rounded-2xl shadow-2xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all z-50 border-4 border-white"><Plus size={28} /></button>
-      <QuickEntry isOpen={isEntryOpen} onClose={() => setIsEntryOpen(false)} />
+      <button onClick={() => logic.setIsEntryOpen(true)} className="fixed bottom-10 right-10 bg-slate-900 text-white w-14 h-14 rounded-2xl shadow-2xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all z-50 border-4 border-white"><Plus size={28} /></button>
+      <QuickEntry isOpen={logic.isEntryOpen} onClose={() => logic.setIsEntryOpen(false)} />
     </div>
   );
 }
