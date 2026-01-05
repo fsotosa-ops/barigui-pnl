@@ -5,21 +5,33 @@ import { Plus, UploadCloud, Loader2, Calendar } from 'lucide-react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { MetricGrid } from '@/components/dashboard/MetricGrid';
 import { TimelineFilter } from '@/components/dashboard/TimelineFilter';
-import { RoadmapList } from '@/components/goals/RoadmapList'; // Componente actualizado
+import { RoadmapList } from '@/components/goals/RoadmapList'; 
 import { QuickEntry } from '@/components/finance/QuickEntry';
 import { TransactionManager } from '@/components/finance/transactions/TransactionManager';
 import { CurrencyTicker } from '@/components/dashboard/CurrencyTicker';
 import { FinancialSettings } from '@/components/finance/FinancialSettings';
+import { CopilotWidget } from '@/components/advisor/CopilotWidget'; // <--- 1. IMPORTAR
+
 import { useDashboardLogic } from '@/hooks/useDashboardLogic';
 
 export default function OperationalDash() {
   const logic = useDashboardLogic();
-  // Estado para evitar errores de hidratación
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // 2. PREPARAR CONTEXTO PARA EL COPILOT
+  const advisorContext = {
+    kpi: logic.kpiData,
+    budget: logic.annualBudget,
+    cash: logic.currentCash,
+    topExpenses: logic.transactions
+      .filter(t => t.type === 'expense')
+      .slice(0, 5)
+      .map(t => ({ cat: t.category, amount: t.amountUSD }))
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex selection:bg-emerald-100 selection:text-emerald-900">
@@ -34,7 +46,7 @@ export default function OperationalDash() {
 
       <main className={`flex-1 transition-all duration-300 ${logic.sidebarOpen ? 'ml-64' : 'ml-24'} p-8 lg:p-12`}>
         
-        {/* HEADER DINÁMICO */}
+        {/* HEADER */}
         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-12 gap-6">
           <div>
             <h1 className="text-3xl font-black text-slate-900 tracking-tighter">
@@ -65,13 +77,13 @@ export default function OperationalDash() {
           </div>
         </header>
 
+        {/* VISTAS */}
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-3 duration-500">
           
           {logic.activeView === 'dash' && (
             <>
               <MetricGrid data={logic.kpiData} />
               
-              {/* Timeline Chart Container */}
               <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
                  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4 z-10 relative">
                     <div className="flex items-center gap-8">
@@ -138,7 +150,6 @@ export default function OperationalDash() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* WIDGET ROADMAP (Compacto) */}
                 <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm h-full max-h-[400px] flex flex-col">
                     <RoadmapList 
                         tasks={logic.tasks} 
@@ -161,7 +172,6 @@ export default function OperationalDash() {
           )}
 
           {logic.activeView === 'roadmap' && (
-             // VISTA ROADMAP COMPLETA
              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[600px]">
                 <RoadmapList 
                   tasks={logic.tasks} 
@@ -191,12 +201,17 @@ export default function OperationalDash() {
         </div>
       </main>
 
+      {/* 3. WIDGETS FLOTANTES */}
+      
       <button 
         onClick={() => logic.setIsEntryOpen(true)} 
         className="fixed bottom-10 right-10 bg-slate-900 text-white w-16 h-16 rounded-[1.5rem] shadow-2xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-50 border-[6px] border-white group"
       >
         <Plus size={32} className="group-hover:rotate-90 transition-transform duration-300" />
       </button>
+
+      {/* Copilot está posicionado a la izquierda del botón de añadir */}
+      <CopilotWidget contextData={advisorContext} />
       
       <QuickEntry isOpen={logic.isEntryOpen} onClose={() => logic.setIsEntryOpen(false)} />
     </div>
