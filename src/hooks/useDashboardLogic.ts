@@ -6,8 +6,11 @@ import { createClient } from '@/lib/supabase/client';
 import { Transaction, Task } from '@/types/finance';
 import { NotificationType } from '@/components/ui/ProcessNotification';
 
-// --- HELPER PARA OPTIMIZACIÓN (Huella digital del archivo) ---
-const getFileFingerprint = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
+// --- HELPER PARA HUELLA DIGITAL (Identificador único de archivo) ---
+const generateFileHash = (file: File) => {
+  // Creamos una firma única combinando: Nombre + Tamaño + Última Modificación
+  return `${file.name}_${file.size}_${file.lastModified}`;
+};
 
 export const useDashboardLogic = () => {
   const router = useRouter();
@@ -84,7 +87,7 @@ export const useDashboardLogic = () => {
 
   // --- 1. GUARDADO INTELIGENTE (API HÍBRIDA) ---
   const handleAddTransaction = async (txData: Partial<Transaction>): Promise<'created' | 'duplicate' | 'error'> => {
-    // Solo activamos loading global si NO estamos en medio de una carga masiva
+    // Solo activamos loading global si es una entrada individual manual
     const isSingleEntry = !isUploading; 
     if (isSingleEntry) setIsUploading(true);
 
@@ -149,26 +152,33 @@ export const useDashboardLogic = () => {
     }
   };
 
-  // --- 2. UPLOAD OPTIMIZADO (CON CACHE LOCAL + IA) ---
+  // --- 2. UPLOAD OPTIMIZADO (CHECK EN BASE DE DATOS) ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // A. OPTIMIZACIÓN: Verificación Local de Huella Digital
-    const fileId = getFileFingerprint(file);
-    const processedFiles = JSON.parse(localStorage.getItem('fluxo_processed_files') || '[]');
+    // A. Generar huella digital del archivo
+    const fileHash = generateFileHash(file);
 
-    if (processedFiles.includes(fileId)) {
-        // Alerta nativa para confirmar acción crítica (gasto de dinero/tokens)
-        const confirmReupload = confirm(
-            "⚠️ Este archivo parece que YA FUE PROCESADO anteriormente.\n\n" +
-            "Si continúas, consumiremos créditos de IA para leerlo de nuevo.\n" +
-            "¿Estás seguro que quieres procesarlo otra vez?"
-        );
-        if (!confirmReupload) {
-            if (fileInputRef.current) fileInputRef.current.value = '';
-            return; // Cancelamos operación -> Ahorro de Tokens ✅
-        }
+    // B. Consultar historial en Supabase (Costo $0, muy rápido)
+    const { data: existingLog } = await supabase
+      .from('import_logs')
+      .select('id')
+      .eq('file_hash', fileHash)
+      .maybeSingle();
+
+    // C. Si ya existe, pedir confirmación crítica
+    if (existingLog) {
+       const confirmReupload = confirm(
+          "💾 ARCHIVO YA PROCESADO EN LA NUBE.\n\n" +
+          "Nuestra base de datos indica que este archivo ya fue importado.\n" +
+          "¿Realmente quieres volver a gastar créditos de IA en él?"
+       );
+       
+       if (!confirmReupload) {
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return; // Cancelamos operación -> Ahorro de Tokens ✅
+       }
     }
 
     setIsUploading(true);
@@ -176,7 +186,7 @@ export const useDashboardLogic = () => {
       const formData = new FormData();
       formData.append('file', file);
 
-      // B. Llamada a OpenAI (Costo de Tokens)
+      // D. Análisis con IA (Costo de Tokens)
       const parseRes = await fetch('/api/parse-statement', {
         method: 'POST',
         body: formData,
@@ -189,7 +199,7 @@ export const useDashboardLogic = () => {
       let duplicateCount = 0;
       let errorCount = 0;
 
-      // C. Procesamiento Secuencial
+      // E. Procesamiento Secuencial
       for (const tx of parsedTxs) {
         const status = await handleAddTransaction({
            description: tx.description,
@@ -206,27 +216,30 @@ export const useDashboardLogic = () => {
         else errorCount++;
       }
       
-      // D. Guardar en Cache si fue exitoso (para evitar re-procesar a futuro)
+      // F. Registrar en Bitácora (Si hubo éxito real)
       if (createdCount > 0 || duplicateCount > 0) {
-          const newHistory = [...processedFiles, fileId];
-          localStorage.setItem('fluxo_processed_files', JSON.stringify(newHistory));
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            await supabase.from('import_logs').insert({
+                user_id: user.id,
+                file_hash: fileHash,
+                file_name: file.name
+            });
+          }
       }
 
-      // E. Notificación al Usuario
+      // G. Notificación Final
       const details = [];
       let type: NotificationType = 'success';
       let title = 'Proceso Completado';
 
       if (createdCount > 0) details.push(`✅ ${createdCount} nuevos registros guardados.`);
       if (duplicateCount > 0) {
-          details.push(`⚠️ ${duplicateCount} transacciones ya existían.`);
-          if (createdCount === 0) {
-             type = 'warning';
-             title = 'Sin Cambios';
-          }
+          details.push(`⚠️ ${duplicateCount} transacciones ya existían (ignoradas).`);
+          if (createdCount === 0) { type = 'warning'; title = 'Sin Novedades'; }
       }
       if (errorCount > 0) {
-          details.push(`❌ ${errorCount} errores al procesar.`);
+          details.push(`❌ ${errorCount} errores.`);
           if (createdCount === 0) type = 'error';
       }
 
@@ -287,7 +300,7 @@ export const useDashboardLogic = () => {
     window.location.href = '/login'; 
   };
 
-  // --- KPIS ---
+  // --- KPIS & PROJECCIONES ---
   const availableYears = useMemo(() => [2025, 2026], []);
   const filteredTransactions = useMemo(() => transactions.filter(t => new Date(t.date).getFullYear() === selectedYear), [transactions, selectedYear]);
   
