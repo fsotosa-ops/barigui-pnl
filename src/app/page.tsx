@@ -2,40 +2,49 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, UploadCloud, Loader2, Calendar } from 'lucide-react';
+
+// Componentes de Layout y Visualización
 import { Sidebar } from '@/components/layout/Sidebar';
 import { MetricGrid } from '@/components/dashboard/MetricGrid';
 import { TimelineFilter } from '@/components/dashboard/TimelineFilter';
+import { CurrencyTicker } from '@/components/dashboard/CurrencyTicker';
+
+// Componentes Funcionales
 import { RoadmapList } from '@/components/goals/RoadmapList'; 
 import { QuickEntry } from '@/components/finance/QuickEntry';
 import { TransactionManager } from '@/components/finance/transactions/TransactionManager';
-import { CurrencyTicker } from '@/components/dashboard/CurrencyTicker';
 import { FinancialSettings } from '@/components/finance/FinancialSettings';
-import { CopilotWidget } from '@/components/advisor/CopilotWidget'; // <--- 1. IMPORTAR
+import { CopilotWidget } from '@/components/advisor/CopilotWidget';
 
+// Lógica de Negocio (Hook Central)
 import { useDashboardLogic } from '@/hooks/useDashboardLogic';
 
 export default function OperationalDash() {
+  // Consumimos el hook que ya tiene la conexión a la API híbrida (SQL + Vectores)
   const logic = useDashboardLogic();
+  
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // 2. PREPARAR CONTEXTO PARA EL COPILOT
+  // Preparamos el contexto para el Agente (Fluxo Brain)
+  // Aunque el agente puede leer la DB, este contexto inicial acelera la primera respuesta
   const advisorContext = {
     kpi: logic.kpiData,
-    budget: logic.annualBudget,
-    cash: logic.currentCash,
-    topExpenses: logic.transactions
-      .filter(t => t.type === 'expense')
-      .slice(0, 5)
-      .map(t => ({ cat: t.category, amount: t.amountUSD }))
+    budget: { annual: logic.annualBudget, cash: logic.currentCash },
+    activeTasks: logic.tasks.filter(t => !t.completed).map(t => ({ title: t.title, priority: t.impact })),
+    recentExpenses: logic.transactions
+        .filter(t => t.type === 'expense')
+        .slice(0, 5)
+        .map(t => ({ desc: t.description, amount: t.amountUSD }))
   };
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex selection:bg-emerald-100 selection:text-emerald-900">
       
+      {/* NAVEGACIÓN */}
       <Sidebar 
         isOpen={logic.sidebarOpen} 
         toggle={() => logic.setSidebarOpen(!logic.sidebarOpen)} 
@@ -44,6 +53,7 @@ export default function OperationalDash() {
         onLogout={logic.handleLogout}
       />
 
+      {/* ÁREA PRINCIPAL */}
       <main className={`flex-1 transition-all duration-300 ${logic.sidebarOpen ? 'ml-64' : 'ml-24'} p-8 lg:p-12`}>
         
         {/* HEADER */}
@@ -77,13 +87,15 @@ export default function OperationalDash() {
           </div>
         </header>
 
-        {/* VISTAS */}
+        {/* CONTENIDO SEGÚN VISTA */}
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-3 duration-500">
           
+          {/* 1. DASHBOARD GENERAL */}
           {logic.activeView === 'dash' && (
             <>
               <MetricGrid data={logic.kpiData} />
               
+              {/* Gráfico de Proyección */}
               <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
                  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4 z-10 relative">
                     <div className="flex items-center gap-8">
@@ -150,6 +162,7 @@ export default function OperationalDash() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Roadmap Widget */}
                 <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm h-full max-h-[400px] flex flex-col">
                     <RoadmapList 
                         tasks={logic.tasks} 
@@ -160,6 +173,7 @@ export default function OperationalDash() {
                     />
                 </div>
                 
+                {/* Info Card */}
                 <div className="bg-emerald-50/50 p-8 rounded-[2.5rem] border border-emerald-100 flex flex-col justify-center text-center">
                     <p className="text-emerald-800 font-black text-lg mb-2">Margen Activo</p>
                     <p className="text-emerald-600 text-sm font-medium mb-4">Disponibilidad mensual de seguridad</p>
@@ -171,6 +185,7 @@ export default function OperationalDash() {
             </>
           )}
 
+          {/* 2. VISTA ROADMAP DETALLADA */}
           {logic.activeView === 'roadmap' && (
              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[600px]">
                 <RoadmapList 
@@ -183,13 +198,16 @@ export default function OperationalDash() {
              </div>
           )}
 
+          {/* 3. VISTA TRANSACCIONES (Con onAdd conectado a la API inteligente) */}
           {logic.activeView === 'transactions' && (
             <TransactionManager 
               transactions={logic.transactions} 
-              setTransactions={logic.setTransactions} 
+              setTransactions={logic.setTransactions}
+              onAdd={logic.handleAddTransaction} // <--- CLAVE PARA AGENTE HÍBRIDO
             />
           )}
 
+          {/* 4. VISTA CONFIGURACIÓN */}
           {logic.activeView === 'settings' && (
             <FinancialSettings 
               annualBudget={logic.annualBudget} setAnnualBudget={logic.setAnnualBudget}
@@ -201,8 +219,9 @@ export default function OperationalDash() {
         </div>
       </main>
 
-      {/* 3. WIDGETS FLOTANTES */}
+      {/* ELEMENTOS FLOTANTES */}
       
+      {/* Botón Nueva Entrada */}
       <button 
         onClick={() => logic.setIsEntryOpen(true)} 
         className="fixed bottom-10 right-10 bg-slate-900 text-white w-16 h-16 rounded-[1.5rem] shadow-2xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-50 border-[6px] border-white group"
@@ -210,10 +229,16 @@ export default function OperationalDash() {
         <Plus size={32} className="group-hover:rotate-90 transition-transform duration-300" />
       </button>
 
-      {/* Copilot está posicionado a la izquierda del botón de añadir */}
+      {/* Agente Inteligente */}
       <CopilotWidget contextData={advisorContext} />
       
-      <QuickEntry isOpen={logic.isEntryOpen} onClose={() => logic.setIsEntryOpen(false)} />
+      {/* Modal de Entrada Rápida (Conectado a la API inteligente) */}
+      <QuickEntry 
+        isOpen={logic.isEntryOpen} 
+        onClose={() => logic.setIsEntryOpen(false)} 
+        onAdd={logic.handleAddTransaction} // <--- CLAVE PARA AGENTE HÍBRIDO
+      />
+
     </div>
   );
 }

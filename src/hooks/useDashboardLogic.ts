@@ -10,21 +10,23 @@ export const useDashboardLogic = () => {
   const router = useRouter();
   const supabase = createClient();
 
-  // AÑADIDO: 'roadmap' al tipo de vista
+  // --- UI STATE ---
   const [activeView, setActiveView] = useState<'dash' | 'transactions' | 'settings' | 'roadmap'>('dash');
-  
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // --- DATA STATE ---
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   
+  // --- FILTERS ---
   const [periodFilter, setPeriodFilter] = useState<'Mensual' | 'Trimestral' | 'Anual'>('Anual');
   const [scenario, setScenario] = useState<'base' | 'worst' | 'best'>('base');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   
+  // --- PROFILE ---
   const [annualBudget, setAnnualBudget] = useState(0); 
   const [monthlyIncome, setMonthlyIncome] = useState(0); 
   const [currentCash, setCurrentCash] = useState(0);    
@@ -37,6 +39,7 @@ export const useDashboardLogic = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // 1. Perfil
       const { data: profile } = await supabase.from('profiles').select('*').single();
       if (profile) {
         setAnnualBudget(Number(profile.annual_budget));
@@ -46,6 +49,7 @@ export const useDashboardLogic = () => {
         await supabase.from('profiles').insert([{ id: user.id }]);
       }
 
+      // 2. Transacciones
       const { data: txs } = await supabase.from('transactions').select('*').order('date', { ascending: false });
       if (txs) {
         setTransactions(txs.map(t => ({
@@ -55,6 +59,7 @@ export const useDashboardLogic = () => {
         })));
       }
 
+      // 3. Tareas
       const { data: tasksData } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
       if (tasksData) {
         setTasks(tasksData.map(t => ({
@@ -66,17 +71,62 @@ export const useDashboardLogic = () => {
     initData();
   }, []);
 
-  // --- TAREAS HANDLERS ---
+  // --- NUEVA FUNCIÓN: GUARDADO HÍBRIDO (SQL + VECTOR) ---
+  const handleAddTransaction = async (txData: Partial<Transaction>) => {
+    setIsUploading(true);
+    try {
+      // Usamos la API Route que crea el Embedding y guarda en DB
+      const response = await fetch('/api/transactions/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+           description: txData.description,
+           amount: txData.amountUSD, 
+           originalAmount: txData.originalAmount,
+           currency: txData.originalCurrency,
+           category: txData.category,
+           date: txData.date || new Date().toISOString().split('T')[0],
+           type: txData.type
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Actualizamos estado local con el dato real devuelto por la DB
+        const newTx: Transaction = {
+            id: result.transaction.id,
+            date: result.transaction.date,
+            description: result.transaction.description,
+            category: result.transaction.category,
+            type: result.transaction.type,
+            originalAmount: Number(result.transaction.original_amount),
+            originalCurrency: result.transaction.original_currency,
+            exchangeRate: 0, // Se puede calcular si viene de backend
+            amountUSD: Number(result.transaction.amount_usd)
+        };
+        
+        setTransactions(prev => [newTx, ...prev]);
+        setIsEntryOpen(false); // Cerramos el modal si viene de QuickEntry
+      } else {
+        console.error("Error al guardar transacción:", result.error);
+        alert("Error al guardar. Revisa la consola.");
+      }
+    } catch (error) {
+      console.error("Error de red:", error);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // --- OTRAS FUNCIONES ---
   const handleAddTask = async (taskData: { title: string; impact: 'high' | 'medium' | 'low'; dueDate: string }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const payload = { user_id: user.id, title: taskData.title, impact: taskData.impact, due_date: taskData.dueDate || null, completed: false };
     const { data, error } = await supabase.from('tasks').insert([payload]).select().single();
     if (!error && data) {
-        setTasks(prev => [...prev, { 
-            id: data.id, title: data.title, completed: data.completed, blocked: data.blocked, 
-            impact: data.impact, dueDate: data.due_date 
-        }]);
+        setTasks(prev => [...prev, { id: data.id, title: data.title, completed: data.completed, blocked: data.blocked, impact: data.impact, dueDate: data.due_date }]);
     }
   };
 
@@ -90,13 +140,6 @@ export const useDashboardLogic = () => {
     await supabase.from('tasks').delete().eq('id', id);
   };
 
-  // NUEVO: Handler para bloquear tareas
-  const handleBlockTask = async (id: number, isBlocked: boolean, reason?: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, blocked: isBlocked, blockerDescription: reason } : t));
-    await supabase.from('tasks').update({ blocked: isBlocked, blocker_description: isBlocked ? reason : null }).eq('id', id);
-  };
-
-  // --- PERFIL HANDLERS ---
   const updateProfile = async (field: string, value: number) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -104,7 +147,6 @@ export const useDashboardLogic = () => {
     await supabase.from('profiles').update({ [dbField]: value }).eq('id', user.id);
   };
 
-  // --- LOGOUT & OTHERS ---
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = '/login'; 
@@ -116,7 +158,6 @@ export const useDashboardLogic = () => {
   const filteredTransactions = useMemo(() => transactions.filter(t => new Date(t.date).getFullYear() === selectedYear), [transactions, selectedYear]);
   
   const projectedData = useMemo(() => {
-    // Lógica completa de proyección (restaurada para evitar NaN)
     if (annualBudget === 0 && filteredTransactions.length === 0) return [];
     const monthlyExpenses = new Array(12).fill(0);
     filteredTransactions.forEach(t => {
@@ -160,7 +201,8 @@ export const useDashboardLogic = () => {
   return {
     sidebarOpen, setSidebarOpen, activeView, setActiveView, isEntryOpen, setIsEntryOpen, isUploading, fileInputRef,
     transactions, setTransactions,
-    tasks, handleAddTask, handleToggleTask, handleDeleteTask, handleBlockTask, // Exportamos handleBlockTask
+    tasks, handleAddTask, handleToggleTask, handleDeleteTask, 
+    handleAddTransaction, // <--- EXPORTADO PARA QUE LOS COMPONENTES LO USEN
     periodFilter, setPeriodFilter, scenario, setScenario, selectedYear, setSelectedYear, availableYears,
     annualBudget, setAnnualBudget: (v: number) => { setAnnualBudget(v); updateProfile('annualBudget', v); },
     monthlyIncome, setMonthlyIncome: (v: number) => { setMonthlyIncome(v); updateProfile('monthlyIncome', v); },

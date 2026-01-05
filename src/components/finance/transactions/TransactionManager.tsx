@@ -8,12 +8,13 @@ import { TransactionForm } from './TransactionForm';
 interface TransactionManagerProps {
   transactions: Transaction[];
   setTransactions: React.Dispatch<React.SetStateAction<Transaction[]>>;
+  // Nueva prop para conectar con el guardado inteligente
+  onAdd?: (tx: any) => Promise<void>; 
 }
 
-export const TransactionManager = ({ transactions, setTransactions }: TransactionManagerProps) => {
+export const TransactionManager = ({ transactions, setTransactions, onAdd }: TransactionManagerProps) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Transaction | null>(null);
-  
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 25;
 
@@ -28,14 +29,22 @@ export const TransactionManager = ({ transactions, setTransactions }: Transactio
 
   const totalPages = Math.ceil(transactions.length / itemsPerPage);
 
-  const handleSave = (data: Partial<Transaction>) => {
+  const handleSave = async (data: Partial<Transaction>) => {
     if (editingItem) {
+      // EDITAR (Lógica local por ahora, o podrías conectar una API de update)
       setTransactions(prev => prev.map(t => t.id === editingItem.id ? { ...t, ...data } as Transaction : t));
     } else {
-      const newTx = { ...data, id: Date.now().toString() } as Transaction;
-      setTransactions(prev => [...prev, newTx]);
+      // CREAR NUEVA (Usamos la lógica inteligente si existe)
+      if (onAdd) {
+        await onAdd(data);
+      } else {
+        // Fallback local si no se pasa onAdd
+        const newTx = { ...data, id: Date.now().toString() } as Transaction;
+        setTransactions(prev => [...prev, newTx]);
+      }
     }
     setEditingItem(null);
+    setIsModalOpen(false);
   };
 
   const handleEdit = (item: Transaction) => {
@@ -85,7 +94,7 @@ export const TransactionManager = ({ transactions, setTransactions }: Transactio
         onDelete={handleDelete} 
       />
 
-      {/* CONTROLES PAGINACIÓN CON PADDING CORREGIDO */}
+      {/* CONTROLES PAGINACIÓN */}
       {totalPages > 1 && (
         <div className="flex justify-between items-center pt-4 border-t border-slate-50 mt-auto pr-28"> 
           <span className="text-xs font-bold text-slate-400">
