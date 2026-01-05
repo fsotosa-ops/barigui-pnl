@@ -4,8 +4,10 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Transaction, Task } from '@/types/finance';
+import { NotificationType } from '@/components/ui/ProcessNotification';
 
 export const useDashboardLogic = () => {
+  const router = useRouter();
   const supabase = createClient();
 
   // --- UI STATE ---
@@ -14,6 +16,14 @@ export const useDashboardLogic = () => {
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- NOTIFICATION STATE ---
+  const [notification, setNotification] = useState<{
+    isOpen: boolean;
+    type: NotificationType;
+    title: string;
+    details: string[];
+  }>({ isOpen: false, type: 'success', title: '', details: [] });
 
   // --- DATA STATE ---
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -70,11 +80,9 @@ export const useDashboardLogic = () => {
   }, []);
 
   // --- 1. GUARDADO INTELIGENTE (API HÍBRIDA) ---
-  const handleAddTransaction = async (txData: any) => {
-    // Si la llamada viene de QuickEntry, activamos loading allí, si no, aquí.
-    // Para simplificar, usamos el estado global isUploading si no está en uso
-    const isBulkUpload = isUploading; 
-    if (!isBulkUpload) setIsUploading(true);
+  const handleAddTransaction = async (txData: Partial<Transaction>): Promise<'created' | 'duplicate' | 'error'> => {
+    const isSingleEntry = !isUploading; 
+    if (isSingleEntry) setIsUploading(true);
 
     try {
       const response = await fetch('/api/transactions/create', {
@@ -94,6 +102,10 @@ export const useDashboardLogic = () => {
       const result = await response.json();
 
       if (result.success) {
+        if (result.duplicate) {
+            return 'duplicate';
+        }
+
         const newTx: Transaction = {
             id: result.transaction.id,
             date: result.transaction.date,
@@ -102,22 +114,38 @@ export const useDashboardLogic = () => {
             type: result.transaction.type,
             originalAmount: Number(result.transaction.original_amount),
             originalCurrency: result.transaction.original_currency,
-            exchangeRate: 0,
+            exchangeRate: Number(result.transaction.exchange_rate),
             amountUSD: Number(result.transaction.amount_usd)
         };
+        
         setTransactions(prev => [newTx, ...prev]);
-        if (!isBulkUpload) setIsEntryOpen(false);
+        if (isSingleEntry) {
+            setIsEntryOpen(false);
+            // Notificación simple para entrada manual
+            setNotification({
+                isOpen: true, 
+                type: 'success', 
+                title: 'Movimiento Registrado', 
+                details: ['La transacción se guardó y procesó correctamente.']
+            });
+        }
+        return 'created';
       } else {
-        console.error("Error guardando:", result.error);
+        console.error("Error al guardar transacción:", result.error);
+        if (isSingleEntry) {
+             setNotification({ isOpen: true, type: 'error', title: 'Error', details: ['No se pudo guardar la transacción.'] });
+        }
+        return 'error';
       }
     } catch (error) {
       console.error("Error de red:", error);
+      return 'error';
     } finally {
-      if (!isBulkUpload) setIsUploading(false);
+      if (isSingleEntry) setIsUploading(false);
     }
   };
 
-  // --- 2. UPLOAD DE CARTOLAS (CON IA) ---
+  // --- 2. UPLOAD DE CARTOLAS (CON IA Y POPUP) ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -127,7 +155,6 @@ export const useDashboardLogic = () => {
       const formData = new FormData();
       formData.append('file', file);
 
-      // A. Análisis con IA (Vision/Texto)
       const parseRes = await fetch('/api/parse-statement', {
         method: 'POST',
         body: formData,
@@ -136,33 +163,63 @@ export const useDashboardLogic = () => {
       if (!parseRes.ok) throw new Error('Error analizando archivo');
       const { transactions: parsedTxs } = await parseRes.json();
 
-      // B. Guardado Secuencial (Para generar embeddings uno a uno)
-      let count = 0;
+      let createdCount = 0;
+      let duplicateCount = 0;
+      let errorCount = 0;
+
       for (const tx of parsedTxs) {
-        await handleAddTransaction({
+        const status = await handleAddTransaction({
            description: tx.description,
-           amountUSD: tx.amount || 0, // Asumimos que la IA ya nos da el valor numérico
-           originalAmount: tx.original_amount || tx.amount || 0,
-           originalCurrency: tx.currency || 'CLP', // Default si la IA no detecta
+           amountUSD: tx.amount || 0, 
+           originalAmount: tx.original_amount || tx.amount || 0, 
+           originalCurrency: tx.currency || 'CLP', 
            category: tx.category,
            date: tx.date,
            type: tx.type
         });
-        count++;
+
+        if (status === 'created') createdCount++;
+        else if (status === 'duplicate') duplicateCount++;
+        else errorCount++;
       }
       
-      alert(`✅ Se procesaron ${count} movimientos correctamente.`);
+      // Construir notificación detallada
+      const details = [];
+      let type: NotificationType = 'success';
+      let title = 'Proceso Completado';
+
+      if (createdCount > 0) details.push(`✅ ${createdCount} nuevos registros guardados.`);
+      if (duplicateCount > 0) {
+          details.push(`⚠️ ${duplicateCount} transacciones ya existían (ignoradas).`);
+          if (createdCount === 0) {
+             type = 'warning';
+             title = 'Sin Datos Nuevos';
+          }
+      }
+      if (errorCount > 0) {
+          details.push(`❌ ${errorCount} errores al procesar.`);
+          if (createdCount === 0) type = 'error';
+      }
+
+      setNotification({ isOpen: true, type, title, details });
       
     } catch (error) {
       console.error("Upload error:", error);
-      alert("Error procesando el archivo. Verifica el formato.");
+      setNotification({ 
+          isOpen: true, 
+          type: 'error', 
+          title: 'Error de Lectura', 
+          details: ['No se pudo procesar el archivo. Verifica el formato.'] 
+      });
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = ''; // Limpiar input
+      if (fileInputRef.current) fileInputRef.current.value = ''; 
     }
   };
 
-  // --- RESTO DE FUNCIONES (TAREAS, PERFIL, ETC) ---
+  const closeNotification = () => setNotification(prev => ({ ...prev, isOpen: false }));
+
+  // --- TAREAS HANDLERS ---
   const handleAddTask = async (taskData: { title: string; impact: 'high' | 'medium' | 'low'; dueDate: string }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -183,6 +240,11 @@ export const useDashboardLogic = () => {
     await supabase.from('tasks').delete().eq('id', id);
   };
 
+  const handleBlockTask = async (id: number, isBlocked: boolean, reason?: string) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, blocked: isBlocked, blockerDescription: reason } : t));
+    await supabase.from('tasks').update({ blocked: isBlocked, blocker_description: isBlocked ? reason : null }).eq('id', id);
+  };
+
   const updateProfile = async (field: string, value: number) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -195,7 +257,7 @@ export const useDashboardLogic = () => {
     window.location.href = '/login'; 
   };
 
-  // --- KPI CALCULATIONS ---
+  // --- KPIS ---
   const availableYears = useMemo(() => [2025, 2026], []);
   const filteredTransactions = useMemo(() => transactions.filter(t => new Date(t.date).getFullYear() === selectedYear), [transactions, selectedYear]);
   
@@ -243,13 +305,14 @@ export const useDashboardLogic = () => {
   return {
     sidebarOpen, setSidebarOpen, activeView, setActiveView, isEntryOpen, setIsEntryOpen, isUploading, fileInputRef,
     transactions, setTransactions,
-    tasks, handleAddTask, handleToggleTask, handleDeleteTask, 
-    handleAddTransaction, // EXPORTAMOS LA FUNCIÓN
-    handleFileUpload,     // EXPORTAMOS LA FUNCIÓN DE UPLOAD IMPLEMENTADA
+    tasks, handleAddTask, handleToggleTask, handleDeleteTask, handleBlockTask,
+    handleAddTransaction,
+    handleFileUpload,
     periodFilter, setPeriodFilter, scenario, setScenario, selectedYear, setSelectedYear, availableYears,
     annualBudget, setAnnualBudget: (v: number) => { setAnnualBudget(v); updateProfile('annualBudget', v); },
     monthlyIncome, setMonthlyIncome: (v: number) => { setMonthlyIncome(v); updateProfile('monthlyIncome', v); },
     currentCash, setCurrentCash: (v: number) => { setCurrentCash(v); updateProfile('currentCash', v); },
-    monthlyPlan, projectedData, kpiData, handleLogout
+    monthlyPlan, projectedData, kpiData, handleLogout,
+    notification, closeNotification // Exportamos el estado y cierre de notificaciones
   };
 };

@@ -6,8 +6,6 @@ import { generateEmbedding } from '@/lib/ai/embeddings';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    
-    // 1. Extraemos todos los datos necesarios
     const { description, amount, originalAmount, category, date, type, currency } = body;
     
     const cookieStore = await cookies();
@@ -20,17 +18,10 @@ export async function POST(req: Request) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // 2. Lógica de seguridad para montos y tasas
-    // Si originalAmount no viene, asumimos que es igual a amount (tasa 1:1)
     const safeOriginalAmount = originalAmount !== undefined && originalAmount !== null ? originalAmount : amount;
-    
-    // Calculamos el exchange_rate para cumplir con el NOT NULL de la DB
-    // Evitamos división por cero
-    const calculatedRate = safeOriginalAmount !== 0 
-        ? Number((amount / safeOriginalAmount).toFixed(6)) 
-        : 1;
+    const calculatedRate = safeOriginalAmount !== 0 ? Number((amount / safeOriginalAmount).toFixed(6)) : 1;
 
-    // 3. Guardar o Ignorar Duplicados (Upsert)
+    // 1. Upsert con maybeSingle()
     const { data: tx, error: txError } = await supabase
       .from('transactions')
       .upsert(
@@ -42,55 +33,48 @@ export async function POST(req: Request) {
           category,
           date,
           type,
-          original_amount: safeOriginalAmount, // Soluciona error original_amount
-          exchange_rate: calculatedRate        // Soluciona error exchange_rate
+          original_amount: safeOriginalAmount,
+          exchange_rate: calculatedRate
         }],
         { 
-          // Clave única compuesta para evitar duplicados
           onConflict: 'user_id, date, description, original_amount, type', 
           ignoreDuplicates: true 
         }
       )
       .select()
-      .single();
+      .maybeSingle(); // <--- CAMBIO CLAVE AQUÍ
 
     if (txError) {
-        console.error("Error SQL al guardar:", txError);
-        throw txError;
+        // Ignoramos errores de duplicado si la DB lanza PGRST116 de otra forma, 
+        // pero con maybeSingle no debería llegar aquí por duplicados.
+        console.error("Error SQL:", txError);
+        return NextResponse.json({ error: txError.message }, { status: 500 });
     }
 
-    // Si tx es null, es porque era duplicado y se ignoró. Retornamos éxito.
+    // 2. Detección de Duplicado
     if (!tx) {
+        // Si tx es null, es porque upsert ignoró la inserción (ya existía).
         return NextResponse.json({ success: true, duplicate: true });
     }
 
-    // 4. Generar "Recuerdo" (Vector) - Bloque Try/Catch para no fallar si OpenAI falla
+    // 3. Generar Memoria (Solo si es nuevo)
     try {
         const memoryText = `Gasto de ${safeOriginalAmount} ${currency} en ${category}: ${description}. Fecha: ${date}`;
         const vector = await generateEmbedding(memoryText);
 
-        const { error: memError } = await supabase
-        .from('financial_memory')
-        .insert({
+        await supabase.from('financial_memory').insert({
             user_id: user.id,
             content: memoryText,
-            metadata: { 
-                type: 'transaction', 
-                category, 
-                transaction_id: tx.id 
-            },
+            metadata: { type: 'transaction', category, transaction_id: tx.id },
             embedding: vector
         });
-
-        if (memError) console.error("Error guardando memoria (no crítico):", memError);
     } catch (e) {
-        console.error("Error generando embedding (no crítico):", e);
+        console.error("Error embedding:", e);
     }
 
     return NextResponse.json({ success: true, transaction: tx });
 
   } catch (error: any) {
-    console.error("API Error:", error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

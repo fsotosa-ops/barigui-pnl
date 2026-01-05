@@ -8,8 +8,8 @@ import { TransactionForm } from './TransactionForm';
 interface TransactionManagerProps {
   transactions: Transaction[];
   setTransactions: React.Dispatch<React.SetStateAction<Transaction[]>>;
-  // Nueva prop para conectar con el guardado inteligente
-  onAdd?: (tx: any) => Promise<void>; 
+  // CORRECCIÓN: Cambiado de Promise<void> a Promise<any>
+  onAdd?: (tx: any) => Promise<any>; 
 }
 
 export const TransactionManager = ({ transactions, setTransactions, onAdd }: TransactionManagerProps) => {
@@ -31,14 +31,11 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd }: Tra
 
   const handleSave = async (data: Partial<Transaction>) => {
     if (editingItem) {
-      // EDITAR (Lógica local por ahora, o podrías conectar una API de update)
       setTransactions(prev => prev.map(t => t.id === editingItem.id ? { ...t, ...data } as Transaction : t));
     } else {
-      // CREAR NUEVA (Usamos la lógica inteligente si existe)
       if (onAdd) {
         await onAdd(data);
       } else {
-        // Fallback local si no se pasa onAdd
         const newTx = { ...data, id: Date.now().toString() } as Transaction;
         setTransactions(prev => [...prev, newTx]);
       }

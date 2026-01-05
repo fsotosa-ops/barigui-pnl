@@ -16,8 +16,8 @@ const FLAG_URLS: Record<string, string> = {
 interface QuickEntryProps {
   isOpen: boolean;
   onClose: () => void;
-  // Agregamos la prop para conectar con la lógica
-  onAdd?: (transactionData: any) => Promise<void>; 
+  // CORRECCIÓN: Cambiado de Promise<void> a Promise<any> para aceptar el retorno de string
+  onAdd?: (transactionData: any) => Promise<any>; 
 }
 
 export const QuickEntry = ({ isOpen, onClose, onAdd }: QuickEntryProps) => {
@@ -48,7 +48,7 @@ export const QuickEntry = ({ isOpen, onClose, onAdd }: QuickEntryProps) => {
         originalCurrency,
         originalAmount: parseFloat(originalAmount),
         amountUSD,
-        type: 'expense', // Por defecto es gasto en quick entry
+        type: 'expense',
         date: new Date().toISOString().split('T')[0]
     });
     
@@ -153,7 +153,7 @@ export const QuickEntry = ({ isOpen, onClose, onAdd }: QuickEntryProps) => {
             disabled={isSubmitting || loading}
             className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-slate-200 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70 disabled:scale-100"
           >
-            {isSubmitting ? 'GUARDANDO INTELIGENTEMENTE...' : 'REGISTRAR'}
+            {isSubmitting ? 'GUARDANDO...' : 'REGISTRAR'}
           </button>
         </form>
       </div>
