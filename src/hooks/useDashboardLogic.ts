@@ -1,55 +1,96 @@
 'use client';
 
-import { useState, useMemo, useRef } from 'react';
-import { useRouter } from 'next/navigation'; // <--- IMPORTANTE
-import { createClient } from '@/lib/supabase/client'; // <--- IMPORTANTE
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import { Transaction } from '@/types/finance';
 import { useExchangeRates } from '@/hooks/useExchangeRates';
 
 export const useDashboardLogic = () => {
-  // --- AUTH & ROUTING ---
   const router = useRouter();
   const supabase = createClient();
 
   // --- UI STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<'dash' | 'transactions' | 'settings'>('dash');
-  // ... resto de tus estados ...
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ... (MANTÉN TODO EL ESTADO DE BUSINESS, FILTROS Y CONFIG IGUAL QUE ANTES) ...
-  const [transactions, setTransactions] = useState<Transaction[]>([
-    { 
-      id: '1', date: '2026-01-15', description: 'Ingreso Inicial Simulado', category: 'Sumadots - Retainer', type: 'income',
-      originalAmount: 4000, originalCurrency: 'USD', exchangeRate: 1, amountUSD: 4000 
-    },
-    { 
-      id: '2', date: '2026-01-20', description: 'Gasto Inicial Simulado', category: 'Vivienda', type: 'expense',
-      originalAmount: 1200, originalCurrency: 'USD', exchangeRate: 1, amountUSD: 1200 
-    },
-  ]);
-
+  // --- DATA STATE ---
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [periodFilter, setPeriodFilter] = useState<'Mensual' | 'Trimestral' | 'Anual'>('Anual');
   const [scenario, setScenario] = useState<'base' | 'worst' | 'best'>('base');
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   
+  // Variables financieras (Persistidas en tabla 'profiles')
   const [annualBudget, setAnnualBudget] = useState(31200); 
   const [monthlyIncome, setMonthlyIncome] = useState(4500); 
   const [currentCash, setCurrentCash] = useState(18500);    
 
+  const { rates } = useExchangeRates();
   const monthlyPlan = annualBudget / 12;
-  const { rates } = useExchangeRates(); 
 
-  // --- NEW: LOGOUT FUNCTION ---
+  // --- CARGA DE DATOS DESDE SUPABASE ---
+  useEffect(() => {
+    const loadAllData = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // 1. Cargar Perfil
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .single();
+      
+      if (profile) {
+        setAnnualBudget(Number(profile.annual_budget));
+        setMonthlyIncome(Number(profile.monthly_income));
+        setCurrentCash(Number(profile.current_cash));
+      } else {
+        // Crear perfil inicial si no existe
+        await supabase.from('profiles').insert([{ id: user.id }]);
+      }
+
+      // 2. Cargar Transacciones
+      const { data: txs } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('date', { ascending: false });
+      
+      if (txs) {
+        // Mapear snake_case de DB a camelCase de App
+        const mapped: Transaction[] = txs.map(t => ({
+          id: t.id,
+          date: t.date,
+          description: t.description,
+          category: t.category,
+          type: t.type,
+          originalAmount: Number(t.original_amount),
+          originalCurrency: t.original_currency,
+          exchangeRate: Number(t.exchange_rate),
+          amountUSD: Number(t.amount_usd)
+        }));
+        setTransactions(mapped);
+      }
+    };
+
+    loadAllData();
+  }, [supabase]);
+
+  // --- PERSISTENCIA ---
+  const updateFinancialProfile = async (updates: { annual_budget?: number, monthly_income?: number, current_cash?: number }) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from('profiles').update(updates).eq('id', user.id);
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/login');
     router.refresh();
   };
 
-  // ... (MANTÉN LOS USEMEMO Y FUNCIONES DE UPLOAD IGUALES) ...
   const availableYears = useMemo(() => {
     const years = new Set(transactions.map(t => new Date(t.date).getFullYear()));
     years.add(2025);
@@ -60,14 +101,6 @@ export const useDashboardLogic = () => {
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => new Date(t.date).getFullYear() === selectedYear);
   }, [transactions, selectedYear]);
-
-  const isDuplicate = (newTx: Transaction, currentList: Transaction[]) => {
-    return currentList.some(existing => 
-      existing.date === newTx.date &&
-      Math.abs(existing.originalAmount - newTx.originalAmount) < 1 &&
-      existing.description.toLowerCase().trim() === newTx.description.toLowerCase().trim()
-    );
-  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -82,27 +115,33 @@ export const useDashboardLogic = () => {
       const data = await response.json();
       if (data.error) throw new Error(data.error);
 
-      const newTransactions: Transaction[] = (data.transactions || []).map((t: any) => ({
-        id: Date.now().toString() + Math.random().toString().slice(2, 6),
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const newTransactions = (data.transactions || []).map((t: any) => ({
+        user_id: user?.id,
         date: t.date,
         description: t.description,
         category: t.category,
         type: t.type,
-        originalAmount: t.amount,
-        originalCurrency: t.currency || 'CLP',
-        exchangeRate: 0.00105, 
-        amountUSD: t.amountUSD || parseFloat((t.amount * 0.00105).toFixed(2)) 
+        original_amount: t.amount,
+        original_currency: t.currency || 'CLP',
+        exchange_rate: 0.00105, 
+        amount_usd: t.amountUSD || parseFloat((t.amount * 0.00105).toFixed(2)) 
       }));
 
-      const uniqueTransactions = newTransactions.filter(tx => !isDuplicate(tx, transactions));
-
-      if (uniqueTransactions.length > 0) {
-        setTransactions(prev => [...prev, ...uniqueTransactions]);
-        const newYear = new Date(uniqueTransactions[0].date).getFullYear();
-        if (newYear !== selectedYear) setSelectedYear(newYear);
-        alert(`✅ Se importaron ${uniqueTransactions.length} movimientos.`);
-      } else {
-        alert('⚠️ No hay movimientos nuevos.');
+      const { data: saved, error } = await supabase.from('transactions').insert(newTransactions).select();
+      
+      if (error) throw error;
+      
+      if (saved) {
+        // Recargar localmente
+        const mapped: Transaction[] = saved.map(t => ({
+          id: t.id, date: t.date, description: t.description, category: t.category,
+          type: t.type, originalAmount: t.original_amount, originalCurrency: t.original_currency,
+          exchangeRate: t.exchange_rate, amountUSD: t.amount_usd
+        }));
+        setTransactions(prev => [...mapped, ...prev]);
+        alert(`✅ Se importaron ${saved.length} movimientos.`);
       }
     } catch (error) {
       console.error(error);
@@ -115,49 +154,31 @@ export const useDashboardLogic = () => {
 
   const projectedData = useMemo(() => {
     const monthlyExpenses = new Array(12).fill(0);
-    
     filteredTransactions.forEach(t => {
       if (t.type === 'expense') {
-        const month = new Date(t.date).getMonth(); 
-        if (month >= 0 && month <= 11) {
-           monthlyExpenses[month] += t.amountUSD;
-        }
+        const month = new Date(t.date).getUTCMonth(); 
+        if (month >= 0 && month <= 11) monthlyExpenses[month] += t.amountUSD;
       }
     });
 
     const monthLabels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    const baseData = monthLabels.map((label, idx) => ({
-      label,
-      real: monthlyExpenses[idx]
-    }));
-
-    let expenseMultiplier = 1;
-    if (scenario === 'worst') expenseMultiplier = 1.20;
-    if (scenario === 'best') expenseMultiplier = 0.90;
-
-    let dataToProcess = baseData;
-    if (periodFilter === 'Mensual') dataToProcess = baseData.slice(0, 6);
+    let expenseMultiplier = scenario === 'worst' ? 1.20 : scenario === 'best' ? 0.90 : 1;
+    let dataToProcess = periodFilter === 'Mensual' ? monthLabels.slice(0, 6) : monthLabels;
 
     let accumPlan = 0;
     let accumReal = 0;
     const currentMonthIndex = new Date().getMonth(); 
     const isCurrentYear = selectedYear === new Date().getFullYear();
 
-    return dataToProcess.map((d, i) => {
+    return dataToProcess.map((label, i) => {
       accumPlan += monthlyPlan; 
       const shouldShowReal = !isCurrentYear || i <= currentMonthIndex;
-
       if (shouldShowReal) {
-         accumReal += Math.round(d.real * expenseMultiplier);
+         accumReal += Math.round(monthlyExpenses[i] * expenseMultiplier);
       } else {
          accumReal += Math.round(monthlyPlan * expenseMultiplier);
       }
-
-      return {
-        label: d.label,
-        plan: Math.round(accumPlan),
-        real: Math.round(accumReal) 
-      };
+      return { label, plan: Math.round(accumPlan), real: Math.round(accumReal) };
     });
   }, [scenario, monthlyPlan, periodFilter, filteredTransactions, selectedYear]);
 
@@ -186,30 +207,21 @@ export const useDashboardLogic = () => {
     const runwayCalc = avgBurn > 0 ? parseFloat((currentCash / avgBurn).toFixed(1)) : 0;
 
     return { variance, runway: runwayCalc, savingsRate };
-  }, [monthlyPlan, currentCash, scenario, monthlyIncome, filteredTransactions, selectedYear]);
+  }, [monthlyPlan, currentCash, monthlyIncome, filteredTransactions, selectedYear]);
 
   return {
-    // Auth
-    handleLogout, // <--- EXPORTAMOS LA FUNCIÓN
-
-    // UI State
+    handleLogout,
     sidebarOpen, setSidebarOpen,
     activeView, setActiveView,
     isEntryOpen, setIsEntryOpen,
     isUploading, fileInputRef, handleFileUpload,
-
-    // Data State
     transactions, setTransactions,
-    
-    // Filters & Config
     periodFilter, setPeriodFilter,
     scenario, setScenario,
     selectedYear, setSelectedYear, availableYears,
-    annualBudget, setAnnualBudget,
-    monthlyIncome, setMonthlyIncome,
-    currentCash, setCurrentCash,
-    
-    // Computed Values
+    annualBudget, setAnnualBudget: (v: number) => { setAnnualBudget(v); updateFinancialProfile({ annual_budget: v }); },
+    monthlyIncome, setMonthlyIncome: (v: number) => { setMonthlyIncome(v); updateFinancialProfile({ monthly_income: v }); },
+    currentCash, setCurrentCash: (v: number) => { setCurrentCash(v); updateFinancialProfile({ current_cash: v }); },
     monthlyPlan,
     projectedData,
     kpiData,

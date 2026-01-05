@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CFO Personal",
-  description: "Panel de control financiero personal y operativo",
+  title: "FLUXO. - Control Centre",
+  description: "Gestión Integral de Negocio & Finanzas Personales",
 };
 
 export default function RootLayout({
