@@ -4,10 +4,8 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Transaction, Task } from '@/types/finance';
-import { useExchangeRates } from '@/hooks/useExchangeRates';
 
 export const useDashboardLogic = () => {
-  const router = useRouter();
   const supabase = createClient();
 
   // --- UI STATE ---
@@ -71,11 +69,14 @@ export const useDashboardLogic = () => {
     initData();
   }, []);
 
-  // --- NUEVA FUNCIÓN: GUARDADO HÍBRIDO (SQL + VECTOR) ---
-  const handleAddTransaction = async (txData: Partial<Transaction>) => {
-    setIsUploading(true);
+  // --- 1. GUARDADO INTELIGENTE (API HÍBRIDA) ---
+  const handleAddTransaction = async (txData: any) => {
+    // Si la llamada viene de QuickEntry, activamos loading allí, si no, aquí.
+    // Para simplificar, usamos el estado global isUploading si no está en uso
+    const isBulkUpload = isUploading; 
+    if (!isBulkUpload) setIsUploading(true);
+
     try {
-      // Usamos la API Route que crea el Embedding y guarda en DB
       const response = await fetch('/api/transactions/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -93,7 +94,6 @@ export const useDashboardLogic = () => {
       const result = await response.json();
 
       if (result.success) {
-        // Actualizamos estado local con el dato real devuelto por la DB
         const newTx: Transaction = {
             id: result.transaction.id,
             date: result.transaction.date,
@@ -102,24 +102,67 @@ export const useDashboardLogic = () => {
             type: result.transaction.type,
             originalAmount: Number(result.transaction.original_amount),
             originalCurrency: result.transaction.original_currency,
-            exchangeRate: 0, // Se puede calcular si viene de backend
+            exchangeRate: 0,
             amountUSD: Number(result.transaction.amount_usd)
         };
-        
         setTransactions(prev => [newTx, ...prev]);
-        setIsEntryOpen(false); // Cerramos el modal si viene de QuickEntry
+        if (!isBulkUpload) setIsEntryOpen(false);
       } else {
-        console.error("Error al guardar transacción:", result.error);
-        alert("Error al guardar. Revisa la consola.");
+        console.error("Error guardando:", result.error);
       }
     } catch (error) {
       console.error("Error de red:", error);
     } finally {
-      setIsUploading(false);
+      if (!isBulkUpload) setIsUploading(false);
     }
   };
 
-  // --- OTRAS FUNCIONES ---
+  // --- 2. UPLOAD DE CARTOLAS (CON IA) ---
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // A. Análisis con IA (Vision/Texto)
+      const parseRes = await fetch('/api/parse-statement', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!parseRes.ok) throw new Error('Error analizando archivo');
+      const { transactions: parsedTxs } = await parseRes.json();
+
+      // B. Guardado Secuencial (Para generar embeddings uno a uno)
+      let count = 0;
+      for (const tx of parsedTxs) {
+        await handleAddTransaction({
+           description: tx.description,
+           amountUSD: tx.amount || 0, // Asumimos que la IA ya nos da el valor numérico
+           originalAmount: tx.original_amount || tx.amount || 0,
+           originalCurrency: tx.currency || 'CLP', // Default si la IA no detecta
+           category: tx.category,
+           date: tx.date,
+           type: tx.type
+        });
+        count++;
+      }
+      
+      alert(`✅ Se procesaron ${count} movimientos correctamente.`);
+      
+    } catch (error) {
+      console.error("Upload error:", error);
+      alert("Error procesando el archivo. Verifica el formato.");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = ''; // Limpiar input
+    }
+  };
+
+  // --- RESTO DE FUNCIONES (TAREAS, PERFIL, ETC) ---
   const handleAddTask = async (taskData: { title: string; impact: 'high' | 'medium' | 'low'; dueDate: string }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -151,9 +194,8 @@ export const useDashboardLogic = () => {
     await supabase.auth.signOut();
     window.location.href = '/login'; 
   };
-  const handleFileUpload = async (e: any) => {};
 
-  // --- KPIS ---
+  // --- KPI CALCULATIONS ---
   const availableYears = useMemo(() => [2025, 2026], []);
   const filteredTransactions = useMemo(() => transactions.filter(t => new Date(t.date).getFullYear() === selectedYear), [transactions, selectedYear]);
   
@@ -202,11 +244,12 @@ export const useDashboardLogic = () => {
     sidebarOpen, setSidebarOpen, activeView, setActiveView, isEntryOpen, setIsEntryOpen, isUploading, fileInputRef,
     transactions, setTransactions,
     tasks, handleAddTask, handleToggleTask, handleDeleteTask, 
-    handleAddTransaction, // <--- EXPORTADO PARA QUE LOS COMPONENTES LO USEN
+    handleAddTransaction, // EXPORTAMOS LA FUNCIÓN
+    handleFileUpload,     // EXPORTAMOS LA FUNCIÓN DE UPLOAD IMPLEMENTADA
     periodFilter, setPeriodFilter, scenario, setScenario, selectedYear, setSelectedYear, availableYears,
     annualBudget, setAnnualBudget: (v: number) => { setAnnualBudget(v); updateProfile('annualBudget', v); },
     monthlyIncome, setMonthlyIncome: (v: number) => { setMonthlyIncome(v); updateProfile('monthlyIncome', v); },
     currentCash, setCurrentCash: (v: number) => { setCurrentCash(v); updateProfile('currentCash', v); },
-    monthlyPlan, projectedData, kpiData, handleLogout, handleFileUpload
+    monthlyPlan, projectedData, kpiData, handleLogout
   };
 };
