@@ -6,14 +6,15 @@ import {
   ChevronLeft, 
   ChevronRight, 
   LogOut,
-  TrendingUp
+  TrendingUp,
+  Map // Icono para Roadmap
 } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
   toggle: () => void;
   activeView: string;
-  setView: (view: 'dash' | 'transactions' | 'settings') => void;
+  setView: (view: 'dash' | 'transactions' | 'settings' | 'roadmap') => void;
   onLogout?: () => void;
 }
 
@@ -21,6 +22,7 @@ export const Sidebar = ({ isOpen, toggle, activeView, setView, onLogout }: Sideb
   const menuItems = [
     { id: 'dash', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
     { id: 'transactions', label: 'Flujos de Caja', icon: <ListOrdered size={20} /> },
+    { id: 'roadmap', label: 'Roadmap', icon: <Map size={20} /> },
     { id: 'settings', label: 'Variables', icon: <Settings size={20} /> },
   ];
 
@@ -30,7 +32,6 @@ export const Sidebar = ({ isOpen, toggle, activeView, setView, onLogout }: Sideb
         isOpen ? 'w-64' : 'w-24'
       }`}
     >
-      {/* Header Fluxo Branding */}
       <div className="h-24 flex items-center justify-center border-b border-slate-900 relative">
         <div className="flex items-center gap-3 overflow-hidden px-4">
           <div className="bg-gradient-to-tr from-emerald-400 to-cyan-400 p-2.5 rounded-2xl shadow-lg shadow-emerald-500/10 shrink-0">
@@ -40,16 +41,11 @@ export const Sidebar = ({ isOpen, toggle, activeView, setView, onLogout }: Sideb
             FLUXO<span className="text-emerald-400">.</span>
           </span>
         </div>
-        
-        <button 
-          onClick={toggle}
-          className="absolute -right-3 top-10 bg-emerald-500 text-white p-1 rounded-full shadow-lg hover:bg-emerald-400 transition-colors z-10"
-        >
+        <button onClick={toggle} className="absolute -right-3 top-10 bg-emerald-500 text-white p-1 rounded-full shadow-lg hover:bg-emerald-400 transition-colors z-10">
           {isOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
         </button>
       </div>
 
-      {/* Menú de Navegación */}
       <nav className="flex-1 py-10 px-4 space-y-3">
         {menuItems.map((item) => (
           <button
@@ -68,7 +64,6 @@ export const Sidebar = ({ isOpen, toggle, activeView, setView, onLogout }: Sideb
               {item.label}
             </span>
             
-            {/* Tooltip para modo colapsado */}
             {!isOpen && (
               <div className="absolute left-20 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity border border-slate-800 shadow-2xl z-50 whitespace-nowrap">
                 {item.label}
@@ -78,12 +73,8 @@ export const Sidebar = ({ isOpen, toggle, activeView, setView, onLogout }: Sideb
         ))}
       </nav>
 
-      {/* Footer / Logout */}
       <div className="p-6 border-t border-slate-900">
-        <button 
-          onClick={onLogout}
-          className="w-full flex items-center gap-4 p-4 text-rose-400/50 hover:text-rose-400 hover:bg-rose-500/5 rounded-2xl transition-all group"
-        >
+        <button onClick={onLogout} className="w-full flex items-center gap-4 p-4 text-rose-400/50 hover:text-rose-400 hover:bg-rose-500/5 rounded-2xl transition-all group">
           <LogOut size={20} className="group-hover:-translate-x-1 transition-transform" />
           <span className={`text-sm font-bold overflow-hidden transition-all ${isOpen ? 'w-auto opacity-100' : 'w-0 opacity-0'}`}>
             Cerrar Sesión

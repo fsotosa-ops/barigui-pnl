@@ -33,14 +33,20 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // 1. Si no hay usuario y no está en login, redirigir a login
-  if (!user && !request.nextUrl.pathname.startsWith('/login')) {
+  // -------------------------------------------------------------------
+  // CORRECCIÓN AQUÍ: Excluir también las rutas de '/auth'
+  // -------------------------------------------------------------------
+  if (
+    !user && 
+    !request.nextUrl.pathname.startsWith('/login') && 
+    !request.nextUrl.pathname.startsWith('/auth') // <--- AGREGA ESTA LÍNEA
+  ) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // 2. Si hay usuario y está en login, redirigir al dashboard (home)
+  // 2. Si hay usuario y está en login, redirigir al dashboard
   if (user && request.nextUrl.pathname.startsWith('/login')) {
     const url = request.nextUrl.clone()
     url.pathname = '/'

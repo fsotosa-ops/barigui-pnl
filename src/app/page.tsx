@@ -5,7 +5,7 @@ import { Plus, UploadCloud, Loader2, Calendar } from 'lucide-react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { MetricGrid } from '@/components/dashboard/MetricGrid';
 import { TimelineFilter } from '@/components/dashboard/TimelineFilter';
-import { ActionCenter } from '@/components/goals/ActionCenter';
+import { RoadmapList } from '@/components/goals/RoadmapList'; // Componente actualizado
 import { QuickEntry } from '@/components/finance/QuickEntry';
 import { TransactionManager } from '@/components/finance/transactions/TransactionManager';
 import { CurrencyTicker } from '@/components/dashboard/CurrencyTicker';
@@ -21,10 +21,6 @@ export default function OperationalDash() {
     setMounted(true);
   }, []);
 
-  const initialBlockers = [
-    { id: 1, title: 'Optimizar Flujo de Caja Internacional', completed: false, blocked: true, blockerDescription: 'Requiere validación de estatutos bancarios.' },
-  ];
-
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex selection:bg-emerald-100 selection:text-emerald-900">
       
@@ -38,13 +34,17 @@ export default function OperationalDash() {
 
       <main className={`flex-1 transition-all duration-300 ${logic.sidebarOpen ? 'ml-64' : 'ml-24'} p-8 lg:p-12`}>
         
+        {/* HEADER DINÁMICO */}
         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-12 gap-6">
           <div>
             <h1 className="text-3xl font-black text-slate-900 tracking-tighter">
-              {logic.activeView === 'dash' ? 'Fluxo Control Centre' : logic.activeView === 'transactions' ? 'Registro de Flujos' : 'Parámetros Financieros'}
+              {logic.activeView === 'dash' ? 'Fluxo Control Centre' : 
+               logic.activeView === 'transactions' ? 'Registro de Flujos' : 
+               logic.activeView === 'roadmap' ? 'Roadmap Estratégico' : 
+               'Parámetros Financieros'}
             </h1>
             <p className="text-sm text-slate-400 mt-1 font-medium">
-              Gestión Integral de Negocio & Finanzas Personales
+               {logic.activeView === 'roadmap' ? 'Gestión de Hitos y Prioridades' : 'Gestión Integral de Negocio & Finanzas Personales'}
             </p>
           </div>
           
@@ -59,7 +59,7 @@ export default function OperationalDash() {
                  className="bg-white hover:bg-slate-50 text-slate-800 px-5 py-3 rounded-2xl border border-slate-200 shadow-sm font-bold text-xs flex items-center gap-2 transition-all active:scale-95"
                >
                  {logic.isUploading ? <Loader2 size={16} className="animate-spin text-emerald-500"/> : <UploadCloud size={16} className="text-emerald-500"/>}
-                 {logic.isUploading ? 'Analizando Cartola...' : 'Importar Datos'}
+                 {logic.isUploading ? 'Analizando...' : 'Importar Datos'}
                </button>
              </div>
           </div>
@@ -71,6 +71,7 @@ export default function OperationalDash() {
             <>
               <MetricGrid data={logic.kpiData} />
               
+              {/* Timeline Chart Container */}
               <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
                  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4 z-10 relative">
                     <div className="flex items-center gap-8">
@@ -137,7 +138,17 @@ export default function OperationalDash() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <ActionCenter tasks={initialBlockers} />
+                {/* WIDGET ROADMAP (Compacto) */}
+                <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm h-full max-h-[400px] flex flex-col">
+                    <RoadmapList 
+                        tasks={logic.tasks} 
+                        onAdd={logic.handleAddTask}
+                        onToggle={logic.handleToggleTask}
+                        onDelete={logic.handleDeleteTask}
+                        compact={true} 
+                    />
+                </div>
+                
                 <div className="bg-emerald-50/50 p-8 rounded-[2.5rem] border border-emerald-100 flex flex-col justify-center text-center">
                     <p className="text-emerald-800 font-black text-lg mb-2">Margen Activo</p>
                     <p className="text-emerald-600 text-sm font-medium mb-4">Disponibilidad mensual de seguridad</p>
@@ -147,6 +158,19 @@ export default function OperationalDash() {
                 </div>
               </div>
             </>
+          )}
+
+          {logic.activeView === 'roadmap' && (
+             // VISTA ROADMAP COMPLETA
+             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[600px]">
+                <RoadmapList 
+                  tasks={logic.tasks} 
+                  onAdd={logic.handleAddTask}
+                  onToggle={logic.handleToggleTask}
+                  onDelete={logic.handleDeleteTask}
+                  compact={false} 
+                />
+             </div>
           )}
 
           {logic.activeView === 'transactions' && (

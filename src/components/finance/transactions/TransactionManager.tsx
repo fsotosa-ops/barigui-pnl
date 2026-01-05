@@ -14,20 +14,15 @@ export const TransactionManager = ({ transactions, setTransactions }: Transactio
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Transaction | null>(null);
   
-  // --- PAGINACIÓN ---
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 25;
 
   const paginatedTransactions = useMemo(() => {
-    // 1. Ordenar por fecha (descendente: más nuevo primero)
     const sorted = [...transactions].sort((a, b) => 
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
-    
-    // 2. Calcular slice
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    
     return sorted.slice(indexOfFirstItem, indexOfLastItem);
   }, [transactions, currentPage]);
 
@@ -84,16 +79,15 @@ export const TransactionManager = ({ transactions, setTransactions }: Transactio
         <button className="p-2 bg-slate-50 rounded-xl text-slate-500 hover:bg-slate-100"><Filter size={18}/></button>
       </div>
 
-      {/* TABLA PAGINADA */}
       <TransactionTable 
         transactions={paginatedTransactions} 
         onEdit={handleEdit} 
         onDelete={handleDelete} 
       />
 
-      {/* CONTROLES PAGINACIÓN */}
+      {/* CONTROLES PAGINACIÓN CON PADDING CORREGIDO */}
       {totalPages > 1 && (
-        <div className="flex justify-between items-center pt-4 border-t border-slate-50 mt-auto">
+        <div className="flex justify-between items-center pt-4 border-t border-slate-50 mt-auto pr-28"> 
           <span className="text-xs font-bold text-slate-400">
             Mostrando {paginatedTransactions.length} items
           </span>

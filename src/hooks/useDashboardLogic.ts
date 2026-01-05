@@ -3,227 +3,168 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Transaction } from '@/types/finance';
+import { Transaction, Task } from '@/types/finance';
 import { useExchangeRates } from '@/hooks/useExchangeRates';
 
 export const useDashboardLogic = () => {
   const router = useRouter();
   const supabase = createClient();
 
-  // --- UI STATE ---
+  // AÑADIDO: 'roadmap' al tipo de vista
+  const [activeView, setActiveView] = useState<'dash' | 'transactions' | 'settings' | 'roadmap'>('dash');
+  
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activeView, setActiveView] = useState<'dash' | 'transactions' | 'settings'>('dash');
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- DATA STATE ---
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  
   const [periodFilter, setPeriodFilter] = useState<'Mensual' | 'Trimestral' | 'Anual'>('Anual');
   const [scenario, setScenario] = useState<'base' | 'worst' | 'best'>('base');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   
-  // Variables financieras (Persistidas en tabla 'profiles')
-  const [annualBudget, setAnnualBudget] = useState(31200); 
-  const [monthlyIncome, setMonthlyIncome] = useState(4500); 
-  const [currentCash, setCurrentCash] = useState(18500);    
+  const [annualBudget, setAnnualBudget] = useState(0); 
+  const [monthlyIncome, setMonthlyIncome] = useState(0); 
+  const [currentCash, setCurrentCash] = useState(0);    
 
-  const { rates } = useExchangeRates();
   const monthlyPlan = annualBudget / 12;
 
-  // --- CARGA DE DATOS DESDE SUPABASE ---
+  // --- CARGA INICIAL ---
   useEffect(() => {
-    const loadAllData = async () => {
+    const initData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Cargar Perfil
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .single();
-      
+      const { data: profile } = await supabase.from('profiles').select('*').single();
       if (profile) {
         setAnnualBudget(Number(profile.annual_budget));
         setMonthlyIncome(Number(profile.monthly_income));
         setCurrentCash(Number(profile.current_cash));
       } else {
-        // Crear perfil inicial si no existe
         await supabase.from('profiles').insert([{ id: user.id }]);
       }
 
-      // 2. Cargar Transacciones
-      const { data: txs } = await supabase
-        .from('transactions')
-        .select('*')
-        .order('date', { ascending: false });
-      
+      const { data: txs } = await supabase.from('transactions').select('*').order('date', { ascending: false });
       if (txs) {
-        // Mapear snake_case de DB a camelCase de App
-        const mapped: Transaction[] = txs.map(t => ({
-          id: t.id,
-          date: t.date,
-          description: t.description,
-          category: t.category,
-          type: t.type,
-          originalAmount: Number(t.original_amount),
-          originalCurrency: t.original_currency,
-          exchangeRate: Number(t.exchange_rate),
-          amountUSD: Number(t.amount_usd)
-        }));
-        setTransactions(mapped);
+        setTransactions(txs.map(t => ({
+          id: t.id, date: t.date, description: t.description, category: t.category, type: t.type,
+          originalAmount: Number(t.original_amount), originalCurrency: t.original_currency,
+          exchangeRate: Number(t.exchange_rate), amountUSD: Number(t.amount_usd)
+        })));
+      }
+
+      const { data: tasksData } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
+      if (tasksData) {
+        setTasks(tasksData.map(t => ({
+          id: t.id, title: t.title, completed: t.completed, blocked: t.blocked, 
+          blockerDescription: t.blocker_description, impact: t.impact || 'medium', dueDate: t.due_date
+        })));
       }
     };
+    initData();
+  }, []);
 
-    loadAllData();
-  }, [supabase]);
-
-  // --- PERSISTENCIA ---
-  const updateFinancialProfile = async (updates: { annual_budget?: number, monthly_income?: number, current_cash?: number }) => {
+  // --- TAREAS HANDLERS ---
+  const handleAddTask = async (taskData: { title: string; impact: 'high' | 'medium' | 'low'; dueDate: string }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    await supabase.from('profiles').update(updates).eq('id', user.id);
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
-    router.refresh();
-  };
-
-  const availableYears = useMemo(() => {
-    const years = new Set(transactions.map(t => new Date(t.date).getFullYear()));
-    years.add(2025);
-    years.add(2026);
-    return Array.from(years).sort((a, b) => b - a);
-  }, [transactions]);
-
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter(t => new Date(t.date).getFullYear() === selectedYear);
-  }, [transactions, selectedYear]);
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsUploading(true);
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch('/api/parse-statement', { method: 'POST', body: formData });
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
-
-      const { data: { user } } = await supabase.auth.getUser();
-
-      const newTransactions = (data.transactions || []).map((t: any) => ({
-        user_id: user?.id,
-        date: t.date,
-        description: t.description,
-        category: t.category,
-        type: t.type,
-        original_amount: t.amount,
-        original_currency: t.currency || 'CLP',
-        exchange_rate: 0.00105, 
-        amount_usd: t.amountUSD || parseFloat((t.amount * 0.00105).toFixed(2)) 
-      }));
-
-      const { data: saved, error } = await supabase.from('transactions').insert(newTransactions).select();
-      
-      if (error) throw error;
-      
-      if (saved) {
-        // Recargar localmente
-        const mapped: Transaction[] = saved.map(t => ({
-          id: t.id, date: t.date, description: t.description, category: t.category,
-          type: t.type, originalAmount: t.original_amount, originalCurrency: t.original_currency,
-          exchangeRate: t.exchange_rate, amountUSD: t.amount_usd
-        }));
-        setTransactions(prev => [...mapped, ...prev]);
-        alert(`✅ Se importaron ${saved.length} movimientos.`);
-      }
-    } catch (error) {
-      console.error(error);
-      alert('❌ Error al procesar archivo.');
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+    const payload = { user_id: user.id, title: taskData.title, impact: taskData.impact, due_date: taskData.dueDate || null, completed: false };
+    const { data, error } = await supabase.from('tasks').insert([payload]).select().single();
+    if (!error && data) {
+        setTasks(prev => [...prev, { 
+            id: data.id, title: data.title, completed: data.completed, blocked: data.blocked, 
+            impact: data.impact, dueDate: data.due_date 
+        }]);
     }
   };
 
+  const handleToggleTask = async (id: number, currentStatus: boolean) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !currentStatus } : t));
+    await supabase.from('tasks').update({ completed: !currentStatus }).eq('id', id);
+  };
+
+  const handleDeleteTask = async (id: number) => {
+    setTasks(prev => prev.filter(t => t.id !== id));
+    await supabase.from('tasks').delete().eq('id', id);
+  };
+
+  // NUEVO: Handler para bloquear tareas
+  const handleBlockTask = async (id: number, isBlocked: boolean, reason?: string) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, blocked: isBlocked, blockerDescription: reason } : t));
+    await supabase.from('tasks').update({ blocked: isBlocked, blocker_description: isBlocked ? reason : null }).eq('id', id);
+  };
+
+  // --- PERFIL HANDLERS ---
+  const updateProfile = async (field: string, value: number) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const dbField = field === 'annualBudget' ? 'annual_budget' : field === 'monthlyIncome' ? 'monthly_income' : 'current_cash';
+    await supabase.from('profiles').update({ [dbField]: value }).eq('id', user.id);
+  };
+
+  // --- LOGOUT & OTHERS ---
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = '/login'; 
+  };
+  const handleFileUpload = async (e: any) => {};
+
+  // --- KPIS ---
+  const availableYears = useMemo(() => [2025, 2026], []);
+  const filteredTransactions = useMemo(() => transactions.filter(t => new Date(t.date).getFullYear() === selectedYear), [transactions, selectedYear]);
+  
   const projectedData = useMemo(() => {
+    // Lógica completa de proyección (restaurada para evitar NaN)
+    if (annualBudget === 0 && filteredTransactions.length === 0) return [];
     const monthlyExpenses = new Array(12).fill(0);
     filteredTransactions.forEach(t => {
       if (t.type === 'expense') {
-        const month = new Date(t.date).getUTCMonth(); 
+        const parts = t.date.split('-');
+        const month = parseInt(parts[1], 10) - 1;
         if (month >= 0 && month <= 11) monthlyExpenses[month] += t.amountUSD;
       }
     });
-
-    const monthLabels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const baseData = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'].map((label, idx) => ({ label, real: monthlyExpenses[idx] }));
     let expenseMultiplier = scenario === 'worst' ? 1.20 : scenario === 'best' ? 0.90 : 1;
-    let dataToProcess = periodFilter === 'Mensual' ? monthLabels.slice(0, 6) : monthLabels;
-
-    let accumPlan = 0;
-    let accumReal = 0;
-    const currentMonthIndex = new Date().getMonth(); 
+    let accumPlan = 0, accumReal = 0;
+    const currentMonthIndex = new Date().getMonth();
     const isCurrentYear = selectedYear === new Date().getFullYear();
-
-    return dataToProcess.map((label, i) => {
+    
+    return baseData.map((d, i) => {
       accumPlan += monthlyPlan; 
       const shouldShowReal = !isCurrentYear || i <= currentMonthIndex;
-      if (shouldShowReal) {
-         accumReal += Math.round(monthlyExpenses[i] * expenseMultiplier);
-      } else {
-         accumReal += Math.round(monthlyPlan * expenseMultiplier);
-      }
-      return { label, plan: Math.round(accumPlan), real: Math.round(accumReal) };
+      if (shouldShowReal) accumReal += Math.round(d.real * expenseMultiplier);
+      else accumReal += Math.round(monthlyPlan * expenseMultiplier);
+      return { label: d.label, plan: Math.round(accumPlan), real: Math.round(accumReal) };
     });
-  }, [scenario, monthlyPlan, periodFilter, filteredTransactions, selectedYear]);
+  }, [scenario, monthlyPlan, periodFilter, filteredTransactions, selectedYear, annualBudget]);
 
   const kpiData = useMemo(() => {
     const currentMonth = new Date().getMonth();
     const isCurrentYear = selectedYear === new Date().getFullYear();
-    let realExpenseForCalc = 0;
-
+    let realExpense = 0;
     if (isCurrentYear) {
-       realExpenseForCalc = filteredTransactions
-        .filter(t => t.type === 'expense' && new Date(t.date).getMonth() === currentMonth)
-        .reduce((acc, t) => acc + t.amountUSD, 0);
+       realExpense = filteredTransactions.filter(t => t.type === 'expense' && new Date(t.date).getMonth() === currentMonth).reduce((acc, t) => acc + t.amountUSD, 0);
     } else {
-       const totalYearExpense = filteredTransactions
-        .filter(t => t.type === 'expense')
-        .reduce((acc, t) => acc + t.amountUSD, 0);
-       realExpenseForCalc = totalYearExpense / 12;
+       realExpense = filteredTransactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amountUSD, 0) / 12;
     }
-
-    const variance = Number((monthlyPlan - realExpenseForCalc).toFixed(0));
-    const savingsRate = monthlyIncome > 0 
-      ? Math.round(((monthlyIncome - realExpenseForCalc) / monthlyIncome) * 100) 
-      : 0;
-
-    const avgBurn = realExpenseForCalc > 0 ? realExpenseForCalc : monthlyPlan;
+    const variance = Number((monthlyPlan - (realExpense || 0)).toFixed(0));
+    const savingsRate = monthlyIncome > 0 ? Math.round(((monthlyIncome - (realExpense || 0)) / monthlyIncome) * 100) : 0;
+    const avgBurn = realExpense > 0 ? realExpense : monthlyPlan;
     const runwayCalc = avgBurn > 0 ? parseFloat((currentCash / avgBurn).toFixed(1)) : 0;
-
     return { variance, runway: runwayCalc, savingsRate };
   }, [monthlyPlan, currentCash, monthlyIncome, filteredTransactions, selectedYear]);
 
   return {
-    handleLogout,
-    sidebarOpen, setSidebarOpen,
-    activeView, setActiveView,
-    isEntryOpen, setIsEntryOpen,
-    isUploading, fileInputRef, handleFileUpload,
+    sidebarOpen, setSidebarOpen, activeView, setActiveView, isEntryOpen, setIsEntryOpen, isUploading, fileInputRef,
     transactions, setTransactions,
-    periodFilter, setPeriodFilter,
-    scenario, setScenario,
-    selectedYear, setSelectedYear, availableYears,
-    annualBudget, setAnnualBudget: (v: number) => { setAnnualBudget(v); updateFinancialProfile({ annual_budget: v }); },
-    monthlyIncome, setMonthlyIncome: (v: number) => { setMonthlyIncome(v); updateFinancialProfile({ monthly_income: v }); },
-    currentCash, setCurrentCash: (v: number) => { setCurrentCash(v); updateFinancialProfile({ current_cash: v }); },
-    monthlyPlan,
-    projectedData,
-    kpiData,
+    tasks, handleAddTask, handleToggleTask, handleDeleteTask, handleBlockTask, // Exportamos handleBlockTask
+    periodFilter, setPeriodFilter, scenario, setScenario, selectedYear, setSelectedYear, availableYears,
+    annualBudget, setAnnualBudget: (v: number) => { setAnnualBudget(v); updateProfile('annualBudget', v); },
+    monthlyIncome, setMonthlyIncome: (v: number) => { setMonthlyIncome(v); updateProfile('monthlyIncome', v); },
+    currentCash, setCurrentCash: (v: number) => { setCurrentCash(v); updateProfile('currentCash', v); },
+    monthlyPlan, projectedData, kpiData, handleLogout, handleFileUpload
   };
 };

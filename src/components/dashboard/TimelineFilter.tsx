@@ -9,7 +9,6 @@ interface PeriodData {
   real: number;
 }
 
-// 1. Agregamos 'headless' como opcional (?) y booleano
 interface TimelineFilterProps {
   data: PeriodData[];
   period: 'Mensual' | 'Trimestral' | 'Anual';
@@ -17,7 +16,7 @@ interface TimelineFilterProps {
   scenario: 'base' | 'worst' | 'best';
   setScenario: (s: 'base' | 'worst' | 'best') => void;
   runway: number;
-  headless?: boolean; // <--- NUEVA PROPIEDAD
+  headless?: boolean;
 }
 
 export const TimelineFilter = ({ 
@@ -27,7 +26,7 @@ export const TimelineFilter = ({
   scenario, 
   setScenario, 
   runway,
-  headless = false // Valor por defecto false
+  headless = false 
 }: TimelineFilterProps) => {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
@@ -36,11 +35,23 @@ export const TimelineFilter = ({
   const paddingX = 40;
   const paddingY = 30;
 
-  // Escala
-  const maxVal = Math.max(...data.map(d => Math.max(d.plan, d.real))) * 1.15 || 100;
+  // --- CORRECCIÓN CRÍTICA ---
+  // Calculamos maxVal de forma segura. Si data está vacío, usamos un fallback de 100.
+  const allValues = data.flatMap(d => [d.plan, d.real]);
+  const safeMax = allValues.length > 0 ? Math.max(...allValues) : 0;
+  // Evitamos que maxVal sea 0 (para no dividir por cero)
+  const maxVal = (safeMax * 1.15) || 100;
   
-  const getX = (index: number) => (index / (data.length - 1)) * (width - paddingX * 2) + paddingX;
-  const getY = (value: number) => height - ((value / maxVal) * (height - paddingY * 2)) - paddingY;
+  const getX = (index: number) => {
+    if (data.length <= 1) return paddingX; // Evitar división por cero si solo hay 1 dato
+    return (index / (data.length - 1)) * (width - paddingX * 2) + paddingX;
+  };
+  
+  const getY = (value: number) => {
+    // Protección extra contra NaN
+    if (isNaN(value)) return height - paddingY;
+    return height - ((value / maxVal) * (height - paddingY * 2)) - paddingY;
+  };
 
   // Generador de Curvas
   const buildPath = (key: 'plan' | 'real') => {
@@ -70,11 +81,21 @@ export const TimelineFilter = ({
   const isOverBudget = lastPoint.real > lastPoint.plan;
   const themeColor = isOverBudget ? '#f43f5e' : '#10b981'; 
 
+  // Si no hay datos, mostramos un estado vacío elegante en lugar de romper
+  if (data.length === 0) {
+    return (
+      <section className={headless ? "relative w-full" : "bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden"}>
+         <div className="h-[220px] flex flex-col items-center justify-center text-slate-300">
+            <p className="text-sm font-bold">Sin datos para proyectar</p>
+            <p className="text-xs">Ajusta tus variables o agrega movimientos</p>
+         </div>
+      </section>
+    );
+  }
+
   return (
-    // 2. Si es headless, quitamos el borde, padding y sombra para que se integre en el contenedor padre
     <section className={headless ? "relative w-full" : "bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden"}>
       
-      {/* 3. Ocultamos todo el Header antiguo si headless es true */}
       {!headless && (
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4 z-10 relative">
           <div>
@@ -110,7 +131,7 @@ export const TimelineFilter = ({
         </div>
       )}
 
-      {/* SVG del Gráfico (Se mantiene igual) */}
+      {/* SVG del Gráfico */}
       <div className="relative w-full aspect-[21/9] min-h-[220px]">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
             <defs>
@@ -154,7 +175,7 @@ export const TimelineFilter = ({
         </div>
 
         {/* TOOLTIP */}
-        {hoverIndex !== null && (
+        {hoverIndex !== null && data[hoverIndex] && (
             <div 
                 className="absolute top-0 pointer-events-none bg-slate-900/95 backdrop-blur text-white p-3 rounded-xl shadow-2xl z-50 transition-all duration-100 min-w-[140px]"
                 style={{ 
