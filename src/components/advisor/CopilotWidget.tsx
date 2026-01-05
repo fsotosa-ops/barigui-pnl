@@ -1,46 +1,69 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Sparkles, Send, X, Bot, TrendingUp } from 'lucide-react';
+import { Sparkles, Send, X, Bot, Maximize2, Minimize2 } from 'lucide-react';
 
 interface CopilotProps {
   contextData: any;
 }
 
+// Función simple para formatear texto (Markdown lite)
+const formatMessage = (text: string) => {
+  return text
+    .split('\n')
+    .map((line, i) => {
+      // Negritas: **texto** -> <strong>texto</strong>
+      const bolded = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      
+      if (line.trim().startsWith('-')) {
+        return <li key={i} className="ml-4 list-disc marker:text-emerald-500 pl-1 mb-1" dangerouslySetInnerHTML={{ __html: bolded.substring(1) }} />;
+      }
+      return <p key={i} className="mb-2 last:mb-0 leading-relaxed" dangerouslySetInnerHTML={{ __html: bolded }} />;
+    });
+};
+
 export const CopilotWidget = ({ contextData }: CopilotProps) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [messages, setMessages] = useState<{ role: 'user' | 'bot', text: string }[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const hasInitialized = useRef(false);
 
   useEffect(() => {
     if (!hasInitialized.current && contextData) {
-      const timer = setTimeout(() => {
-         handleAskCopilot('');
-      }, 1500); // Un poco más de delay para no abrumar al inicio
+      // Saludo inicial proactivo (simulado para UX inmediata)
+      setTimeout(() => {
+         setMessages([{ role: 'bot', text: '¡Hola! Soy Fluxo. 🧠\nVeo tus números al día. ¿En qué te ayudo a ahorrar hoy?' }]);
+      }, 1000);
       hasInitialized.current = true;
-      return () => clearTimeout(timer);
     }
   }, [contextData]);
 
-  const handleAskCopilot = async (query: string) => {
-    if (!query && loading) return;
-    
-    if (query) {
-        setMessages(prev => [...prev, { role: 'user', text: query }]);
-        setInput('');
+  // Auto-scroll al fondo
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
+  }, [messages, isOpen]);
+
+  const handleAskCopilot = async (query: string) => {
+    if (!query.trim() || loading) return;
+    
+    const userMsg = query;
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setLoading(true);
 
     try {
       const res = await fetch('/api/advisor', {
         method: 'POST',
-        body: JSON.stringify({ context: contextData, message: query }),
+        body: JSON.stringify({ context: contextData, message: userMsg }),
       });
       const data = await res.json();
       setMessages(prev => [...prev, { role: 'bot', text: data.reply }]);
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'bot', text: '⚠️ Sin conexión con el servidor.' }]);
+      setMessages(prev => [...prev, { role: 'bot', text: '⚠️ Tuve un problema de conexión. Intenta de nuevo.' }]);
     } finally {
       setLoading(false);
     }
@@ -48,58 +71,88 @@ export const CopilotWidget = ({ contextData }: CopilotProps) => {
 
   return (
     <>
-      {/* VENTANA DEL CHAT (Flotante) */}
+      {/* VENTANA DEL CHAT */}
       {isOpen && (
-        <div className="fixed bottom-36 right-8 w-80 md:w-96 h-[500px] bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-200 z-[60]">
+        <div 
+          className={`fixed right-4 md:right-8 bg-white rounded-[2rem] shadow-2xl border border-slate-100 flex flex-col overflow-hidden transition-all duration-300 z-[60] font-sans ${
+            isExpanded 
+              ? 'bottom-8 top-8 w-[90vw] md:w-[600px]' 
+              : 'bottom-32 w-[90vw] md:w-96 h-[550px]'
+          }`}
+        >
           
-          {/* Header Elegante */}
-          <div className="bg-slate-900 p-4 flex justify-between items-center shrink-0">
-            <div className="flex items-center gap-3">
-               <div className="bg-gradient-to-tr from-emerald-400 to-cyan-400 p-2 rounded-xl">
-                  <Bot size={20} className="text-slate-900"/>
+          {/* Header */}
+          <div className="bg-slate-950 p-4 px-6 flex justify-between items-center shrink-0">
+            <div className="flex items-center gap-4">
+               <div className="bg-emerald-500 p-2 rounded-2xl shadow-lg shadow-emerald-500/20">
+                  <Bot size={24} className="text-white"/>
                </div>
                <div>
-                  <h3 className="font-bold text-sm text-white leading-tight">Fluxo Copilot</h3>
-                  <p className="text-[10px] text-slate-400 font-medium">IA Financiera en tiempo real</p>
+                  <h3 className="font-bold text-base text-white leading-tight">Fluxo AI</h3>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
+                    <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wide">CFO Activo</p>
+                  </div>
                </div>
             </div>
-            <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white transition-colors bg-white/10 p-1.5 rounded-full hover:bg-white/20"><X size={16}/></button>
+            <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setIsExpanded(!isExpanded)} 
+                  className="text-slate-400 hover:text-white hover:bg-white/10 p-2 rounded-xl transition-all"
+                >
+                  {isExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                </button>
+                <button 
+                  onClick={() => setIsOpen(false)} 
+                  className="text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded-xl transition-all"
+                >
+                  <X size={18}/>
+                </button>
+            </div>
           </div>
 
           {/* Área de Mensajes */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-50/50">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 scroll-smooth">
             {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] p-3.5 rounded-2xl text-xs font-medium leading-relaxed shadow-sm ${
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                
+                {m.role === 'bot' && (
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center mr-3 shrink-0 mt-1">
+                        <Bot size={16} className="text-emerald-700" />
+                    </div>
+                )}
+
+                <div className={`max-w-[80%] p-4 rounded-[1.5rem] text-sm shadow-sm relative ${
                   m.role === 'user' 
-                    ? 'bg-slate-900 text-white rounded-br-sm' 
-                    : 'bg-white text-slate-600 border border-slate-100 rounded-bl-sm'
+                    ? 'bg-slate-900 text-white rounded-tr-sm' 
+                    : 'bg-white text-slate-700 border border-slate-200 rounded-tl-sm'
                 }`}>
-                  {/* Renderizado simple de Markdown para listas */}
-                  {m.text.split('\n').map((line, idx) => (
-                    <p key={idx} className={line.startsWith('-') ? 'pl-2 mb-1' : 'mb-1 last:mb-0'}>{line}</p>
-                  ))}
+                  {formatMessage(m.text)}
                 </div>
               </div>
             ))}
+            
             {loading && (
-               <div className="flex justify-start">
-                 <div className="bg-white p-4 rounded-2xl rounded-bl-sm shadow-sm border border-slate-100 flex gap-1.5">
+               <div className="flex justify-start items-center">
+                 <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center mr-3">
+                    <Bot size={16} className="text-emerald-700" />
+                 </div>
+                 <div className="bg-white px-4 py-3 rounded-[1.5rem] rounded-tl-sm shadow-sm border border-slate-200 flex gap-1.5 items-center">
                     <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce"></span>
-                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce delay-75"></span>
-                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce delay-150"></span>
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce delay-100"></span>
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce delay-200"></span>
                  </div>
                </div>
             )}
           </div>
 
           {/* Input Area */}
-          <div className="p-3 bg-white border-t border-slate-100 shrink-0">
+          <div className="p-4 bg-white border-t border-slate-100 shrink-0">
              <div className="relative flex items-center gap-2">
                 <input 
                   type="text" 
-                  className="w-full bg-slate-50 pl-4 pr-12 py-3.5 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 ring-emerald-500/20 transition-all placeholder:text-slate-400 border border-slate-100"
-                  placeholder="Ej: ¿Cómo aumento mi runway?"
+                  className="w-full bg-slate-50 pl-5 pr-14 py-4 rounded-2xl text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-white transition-all placeholder:text-slate-400 border border-slate-200 hover:border-slate-300"
+                  placeholder="Pregunta sobre tus finanzas..."
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAskCopilot(input)}
@@ -107,29 +160,29 @@ export const CopilotWidget = ({ contextData }: CopilotProps) => {
                 <button 
                   onClick={() => handleAskCopilot(input)}
                   disabled={!input.trim() || loading}
-                  className="absolute right-2 p-2 bg-emerald-500 text-white rounded-xl disabled:opacity-50 hover:bg-emerald-600 transition-all shadow-md active:scale-95"
+                  className="absolute right-2 p-2.5 bg-slate-900 text-white rounded-xl disabled:opacity-50 disabled:scale-95 hover:bg-black hover:scale-105 transition-all shadow-md active:scale-95"
                 >
-                   <Send size={16} />
+                   <Send size={18} />
                 </button>
              </div>
           </div>
         </div>
       )}
 
-      {/* BOTÓN FLOTANTE (Posicionado ENCIMA del botón +) */}
-      <div className="fixed bottom-28 right-10 z-40 flex flex-col items-center gap-2">
-         {/* Badge de notificación */}
-         {!isOpen && messages.length > 0 && (
-            <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 rounded-full border-[3px] border-slate-50 flex items-center justify-center z-50">
+      {/* BOTÓN FLOTANTE */}
+      <div className="fixed bottom-28 right-10 z-50 flex flex-col items-center gap-2">
+         {!isOpen && (
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 rounded-full border-[3px] border-slate-50 flex items-center justify-center z-50 animate-bounce">
                <span className="text-[9px] font-black text-white">1</span>
             </span>
          )}
          
          <button 
             onClick={() => setIsOpen(!isOpen)}
-            className="w-12 h-12 bg-white rounded-2xl shadow-xl border border-slate-100 flex items-center justify-center text-emerald-500 hover:scale-110 hover:text-emerald-600 transition-all active:scale-95 group relative overflow-hidden"
+            className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all active:scale-95 group relative overflow-hidden border-4 border-slate-50 ${
+                isOpen ? 'bg-slate-900 text-white rotate-90' : 'bg-white text-emerald-500 hover:scale-110'
+            }`}
          >
-            <div className="absolute inset-0 bg-emerald-50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
             {isOpen ? <X size={24}/> : <Sparkles size={24} className="fill-emerald-100"/>}
          </button>
       </div>

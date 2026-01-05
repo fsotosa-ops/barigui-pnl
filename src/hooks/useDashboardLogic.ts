@@ -6,6 +6,9 @@ import { createClient } from '@/lib/supabase/client';
 import { Transaction, Task } from '@/types/finance';
 import { NotificationType } from '@/components/ui/ProcessNotification';
 
+// --- HELPER PARA OPTIMIZACIÓN (Huella digital del archivo) ---
+const getFileFingerprint = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
+
 export const useDashboardLogic = () => {
   const router = useRouter();
   const supabase = createClient();
@@ -81,6 +84,7 @@ export const useDashboardLogic = () => {
 
   // --- 1. GUARDADO INTELIGENTE (API HÍBRIDA) ---
   const handleAddTransaction = async (txData: Partial<Transaction>): Promise<'created' | 'duplicate' | 'error'> => {
+    // Solo activamos loading global si NO estamos en medio de una carga masiva
     const isSingleEntry = !isUploading; 
     if (isSingleEntry) setIsUploading(true);
 
@@ -119,9 +123,9 @@ export const useDashboardLogic = () => {
         };
         
         setTransactions(prev => [newTx, ...prev]);
+        
         if (isSingleEntry) {
             setIsEntryOpen(false);
-            // Notificación simple para entrada manual
             setNotification({
                 isOpen: true, 
                 type: 'success', 
@@ -145,16 +149,34 @@ export const useDashboardLogic = () => {
     }
   };
 
-  // --- 2. UPLOAD DE CARTOLAS (CON IA Y POPUP) ---
+  // --- 2. UPLOAD OPTIMIZADO (CON CACHE LOCAL + IA) ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // A. OPTIMIZACIÓN: Verificación Local de Huella Digital
+    const fileId = getFileFingerprint(file);
+    const processedFiles = JSON.parse(localStorage.getItem('fluxo_processed_files') || '[]');
+
+    if (processedFiles.includes(fileId)) {
+        // Alerta nativa para confirmar acción crítica (gasto de dinero/tokens)
+        const confirmReupload = confirm(
+            "⚠️ Este archivo parece que YA FUE PROCESADO anteriormente.\n\n" +
+            "Si continúas, consumiremos créditos de IA para leerlo de nuevo.\n" +
+            "¿Estás seguro que quieres procesarlo otra vez?"
+        );
+        if (!confirmReupload) {
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return; // Cancelamos operación -> Ahorro de Tokens ✅
+        }
+    }
 
     setIsUploading(true);
     try {
       const formData = new FormData();
       formData.append('file', file);
 
+      // B. Llamada a OpenAI (Costo de Tokens)
       const parseRes = await fetch('/api/parse-statement', {
         method: 'POST',
         body: formData,
@@ -167,6 +189,7 @@ export const useDashboardLogic = () => {
       let duplicateCount = 0;
       let errorCount = 0;
 
+      // C. Procesamiento Secuencial
       for (const tx of parsedTxs) {
         const status = await handleAddTransaction({
            description: tx.description,
@@ -183,17 +206,23 @@ export const useDashboardLogic = () => {
         else errorCount++;
       }
       
-      // Construir notificación detallada
+      // D. Guardar en Cache si fue exitoso (para evitar re-procesar a futuro)
+      if (createdCount > 0 || duplicateCount > 0) {
+          const newHistory = [...processedFiles, fileId];
+          localStorage.setItem('fluxo_processed_files', JSON.stringify(newHistory));
+      }
+
+      // E. Notificación al Usuario
       const details = [];
       let type: NotificationType = 'success';
       let title = 'Proceso Completado';
 
       if (createdCount > 0) details.push(`✅ ${createdCount} nuevos registros guardados.`);
       if (duplicateCount > 0) {
-          details.push(`⚠️ ${duplicateCount} transacciones ya existían (ignoradas).`);
+          details.push(`⚠️ ${duplicateCount} transacciones ya existían.`);
           if (createdCount === 0) {
              type = 'warning';
-             title = 'Sin Datos Nuevos';
+             title = 'Sin Cambios';
           }
       }
       if (errorCount > 0) {
@@ -245,6 +274,7 @@ export const useDashboardLogic = () => {
     await supabase.from('tasks').update({ blocked: isBlocked, blocker_description: isBlocked ? reason : null }).eq('id', id);
   };
 
+  // --- PERFIL HANDLERS ---
   const updateProfile = async (field: string, value: number) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -313,6 +343,6 @@ export const useDashboardLogic = () => {
     monthlyIncome, setMonthlyIncome: (v: number) => { setMonthlyIncome(v); updateProfile('monthlyIncome', v); },
     currentCash, setCurrentCash: (v: number) => { setCurrentCash(v); updateProfile('currentCash', v); },
     monthlyPlan, projectedData, kpiData, handleLogout,
-    notification, closeNotification // Exportamos el estado y cierre de notificaciones
+    notification, closeNotification 
   };
 };
