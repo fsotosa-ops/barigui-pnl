@@ -36,11 +36,10 @@ export default function OperationalDash() {
             breakdown[t.category] = (breakdown[t.category] || 0) + t.amountUSD;
         }
     });
-    // Convertir a array ordenado para el prompt
     return Object.entries(breakdown)
         .map(([cat, amount]) => ({ category: cat, total: Math.round(amount) }))
         .sort((a, b) => b.total - a.total)
-        .slice(0, 5); // Top 5 gastos
+        .slice(0, 5); 
   }, [logic.transactions]);
 
   const advisorContext = {
@@ -256,6 +255,7 @@ export default function OperationalDash() {
               transactions={logic.transactions} 
               setTransactions={logic.setTransactions}
               onAdd={logic.handleAddTransaction}
+              onDelete={logic.handleDeleteTransaction}
             />
           )}
 

@@ -14,13 +14,13 @@ const generateFileHash = (file: File) => {
 export const useDashboardLogic = () => {
   const router = useRouter();
   const supabase = createClient();
-  const { rates } = useExchangeRates(); // Acceso a tasas de cambio
+  const { rates, convertToUSD } = useExchangeRates(); // Usamos convertToUSD para importaciones
 
   // --- UI STATE ---
   const [activeView, setActiveView] = useState<'dash' | 'transactions' | 'settings' | 'roadmap'>('dash');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [metricMode, setMetricMode] = useState<'annual' | 'rolling'>('rolling');
-  const [displayCurrency, setDisplayCurrency] = useState<string>('USD'); // Estado para el selector de moneda
+  const [displayCurrency, setDisplayCurrency] = useState<string>('USD'); 
   
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -156,6 +156,31 @@ export const useDashboardLogic = () => {
     }
   };
 
+  // --- BORRADO PERSISTENTE ---
+  const handleDeleteTransaction = async (id: string) => {
+    const backup = [...transactions];
+    setTransactions(prev => prev.filter(t => t.id !== id));
+  
+    const { error } = await supabase.from('transactions').delete().eq('id', id);
+  
+    if (error) {
+      setTransactions(backup);
+      setNotification({ 
+          isOpen: true, 
+          type: 'error', 
+          title: 'Error', 
+          details: ['No se pudo eliminar el registro.'] 
+      });
+    } else {
+      setNotification({ 
+          isOpen: true, 
+          type: 'success', 
+          title: 'Eliminado', 
+          details: ['Transacción eliminada correctamente.'] 
+      });
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -185,11 +210,16 @@ export const useDashboardLogic = () => {
       let errorCount = 0;
 
       for (const tx of parsedTxs) {
+        // CORRECCIÓN: Convertir a USD antes de guardar si la API devolvió moneda local
+        const currency = tx.currency || 'CLP';
+        const rawAmount = tx.amount || 0;
+        const usdAmount = convertToUSD(rawAmount, currency);
+
         const status = await handleAddTransaction({
            description: tx.description,
-           amountUSD: tx.amount || 0, 
-           originalAmount: tx.original_amount || tx.amount || 0, 
-           originalCurrency: tx.currency || 'CLP', 
+           amountUSD: usdAmount, 
+           originalAmount: tx.original_amount || rawAmount, 
+           originalCurrency: currency, 
            category: tx.category,
            date: tx.date,
            type: tx.type
@@ -281,7 +311,6 @@ export const useDashboardLogic = () => {
       divisor = isCurrentYear ? (now.getMonth() + 1) : 12;
     }
 
-    // Cálculos en USD Base
     const totalExpenseUSD = relevantTxs.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amountUSD, 0);
     const avgMonthlyExpenseUSD = totalExpenseUSD / (divisor || 1);
     
@@ -289,14 +318,13 @@ export const useDashboardLogic = () => {
     const savingsRate = monthlyIncome > 0 ? Math.round(((monthlyIncome - avgMonthlyExpenseUSD) / monthlyIncome) * 100) : 0;
     const runway = avgMonthlyExpenseUSD > 0 ? parseFloat((currentCash / avgMonthlyExpenseUSD).toFixed(1)) : 0;
 
-    // Conversión a Moneda de Visualización
     const rate = rates[displayCurrency] || 1;
     const convert = (val: number) => val * rate;
 
     return { 
-      variance: convert(varianceUSD), // Se devuelve convertido
-      runway, // Meses no cambian por moneda
-      savingsRate, // Porcentaje no cambia por moneda
+      variance: convert(varianceUSD), 
+      runway, 
+      savingsRate, 
       currency: displayCurrency 
     };
   }, [metricMode, displayCurrency, transactions, selectedYear, monthlyIncome, currentCash, rates]);
@@ -329,9 +357,10 @@ export const useDashboardLogic = () => {
     sidebarOpen, setSidebarOpen, activeView, setActiveView, isEntryOpen, setIsEntryOpen, isUploading, fileInputRef,
     transactions, setTransactions,
     metricMode, setMetricMode,
-    displayCurrency, setDisplayCurrency, // Exportamos controles de moneda
+    displayCurrency, setDisplayCurrency,
     tasks, handleAddTask, handleToggleTask, handleDeleteTask, handleBlockTask,
     handleAddTransaction,
+    handleDeleteTransaction,
     handleFileUpload,
     periodFilter, setPeriodFilter, scenario, setScenario, selectedYear, setSelectedYear, availableYears,
     annualBudget, setAnnualBudget: (v: number) => { setAnnualBudget(v); updateProfile('annualBudget', v); },
