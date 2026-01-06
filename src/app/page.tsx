@@ -28,7 +28,6 @@ export default function OperationalDash() {
     setMounted(true);
   }, []);
 
-  // --- PREPARACIÓN DE DATOS PARA EL CEREBRO DE LA IA ---
   const categoryBreakdown = useMemo(() => {
     const breakdown: Record<string, number> = {};
     logic.transactions.forEach(t => {
@@ -36,11 +35,10 @@ export default function OperationalDash() {
             breakdown[t.category] = (breakdown[t.category] || 0) + t.amountUSD;
         }
     });
-    // Convertir a array ordenado para el prompt
     return Object.entries(breakdown)
         .map(([cat, amount]) => ({ category: cat, total: Math.round(amount) }))
         .sort((a, b) => b.total - a.total)
-        .slice(0, 5); // Top 5 gastos
+        .slice(0, 5); 
   }, [logic.transactions]);
 
   const advisorContext = {
@@ -137,7 +135,12 @@ export default function OperationalDash() {
           {/* VISTA DASHBOARD */}
           {logic.activeView === 'dash' && (
             <>
-              <MetricGrid data={logic.kpiData} />
+              {/* METRIC GRID CON SWITCH DE MODO */}
+              <MetricGrid 
+                 data={logic.kpiData} 
+                 mode={logic.metricMode} 
+                 setMode={logic.setMetricMode} 
+              />
               
               {/* CHART CARD */}
               <div className="bg-white p-5 md:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">

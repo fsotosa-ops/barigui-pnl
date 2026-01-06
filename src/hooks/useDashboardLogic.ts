@@ -6,9 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Transaction, Task } from '@/types/finance';
 import { NotificationType } from '@/components/ui/ProcessNotification';
 
-// --- HELPER PARA HUELLA DIGITAL (Identificador único de archivo) ---
 const generateFileHash = (file: File) => {
-  // Creamos una firma única combinando: Nombre + Tamaño + Última Modificación
   return `${file.name}_${file.size}_${file.lastModified}`;
 };
 
@@ -18,9 +16,8 @@ export const useDashboardLogic = () => {
 
   // --- UI STATE ---
   const [activeView, setActiveView] = useState<'dash' | 'transactions' | 'settings' | 'roadmap'>('dash');
-  
-  // MODIFICACIÓN RESPONSIVE: Iniciar cerrado por defecto para evitar parpadeos en móvil
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [metricMode, setMetricMode] = useState<'annual' | 'rolling'>('rolling'); // NUEVO ESTADO
   
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -52,7 +49,6 @@ export const useDashboardLogic = () => {
 
   // --- CARGA INICIAL Y RESPONSIVIDAD ---
   useEffect(() => {
-    // 1. Lógica Responsive: Abrir sidebar solo en escritorio
     const handleResize = () => {
       if (window.innerWidth >= 768) {
         setSidebarOpen(true);
@@ -61,18 +57,13 @@ export const useDashboardLogic = () => {
       }
     };
     
-    // Ejecutar al montar
     handleResize();
-    
-    // Escuchar cambios de tamaño
     window.addEventListener('resize', handleResize);
 
-    // 2. Carga de Datos
     const initData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Perfil
       const { data: profile } = await supabase.from('profiles').select('*').single();
       if (profile) {
         setAnnualBudget(Number(profile.annual_budget));
@@ -82,7 +73,6 @@ export const useDashboardLogic = () => {
         await supabase.from('profiles').insert([{ id: user.id }]);
       }
 
-      // Transacciones
       const { data: txs } = await supabase.from('transactions').select('*').order('date', { ascending: false });
       if (txs) {
         setTransactions(txs.map(t => ({
@@ -92,7 +82,6 @@ export const useDashboardLogic = () => {
         })));
       }
 
-      // Tareas
       const { data: tasksData } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
       if (tasksData) {
         setTasks(tasksData.map(t => ({
@@ -106,7 +95,7 @@ export const useDashboardLogic = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // --- 1. GUARDADO INTELIGENTE (API HÍBRIDA) ---
+  // --- GUARDADO INTELIGENTE ---
   const handleAddTransaction = async (txData: Partial<Transaction>): Promise<'created' | 'duplicate' | 'error'> => {
     const isSingleEntry = !isUploading; 
     if (isSingleEntry) setIsUploading(true);
@@ -129,9 +118,7 @@ export const useDashboardLogic = () => {
       const result = await response.json();
 
       if (result.success) {
-        if (result.duplicate) {
-            return 'duplicate';
-        }
+        if (result.duplicate) return 'duplicate';
 
         const newTx: Transaction = {
             id: result.transaction.id,
@@ -150,54 +137,34 @@ export const useDashboardLogic = () => {
         if (isSingleEntry) {
             setIsEntryOpen(false);
             setNotification({
-                isOpen: true, 
-                type: 'success', 
-                title: 'Movimiento Registrado', 
+                isOpen: true, type: 'success', title: 'Movimiento Registrado', 
                 details: ['La transacción se guardó y procesó correctamente.']
             });
         }
         return 'created';
       } else {
-        console.error("Error al guardar transacción:", result.error);
-        if (isSingleEntry) {
-             setNotification({ isOpen: true, type: 'error', title: 'Error', details: ['No se pudo guardar la transacción.'] });
-        }
+        if (isSingleEntry) setNotification({ isOpen: true, type: 'error', title: 'Error', details: ['No se pudo guardar la transacción.'] });
         return 'error';
       }
     } catch (error) {
-      console.error("Error de red:", error);
       return 'error';
     } finally {
       if (isSingleEntry) setIsUploading(false);
     }
   };
 
-  // --- 2. UPLOAD OPTIMIZADO (CHECK EN BASE DE DATOS) ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // A. Generar huella digital del archivo
     const fileHash = generateFileHash(file);
+    const { data: existingLog } = await supabase.from('import_logs').select('id').eq('file_hash', fileHash).maybeSingle();
 
-    // B. Consultar historial en Supabase (Costo $0, muy rápido)
-    const { data: existingLog } = await supabase
-      .from('import_logs')
-      .select('id')
-      .eq('file_hash', fileHash)
-      .maybeSingle();
-
-    // C. Si ya existe, pedir confirmación crítica
     if (existingLog) {
-       const confirmReupload = confirm(
-          "💾 ARCHIVO YA PROCESADO EN LA NUBE.\n\n" +
-          "Nuestra base de datos indica que este archivo ya fue importado.\n" +
-          "¿Realmente quieres volver a gastar créditos de IA en él?"
-       );
-       
+       const confirmReupload = confirm("Este archivo ya fue importado. ¿Procesar de nuevo?");
        if (!confirmReupload) {
           if (fileInputRef.current) fileInputRef.current.value = '';
-          return; // Cancelamos operación -> Ahorro de Tokens ✅
+          return;
        }
     }
 
@@ -206,12 +173,7 @@ export const useDashboardLogic = () => {
       const formData = new FormData();
       formData.append('file', file);
 
-      // D. Análisis con IA (Costo de Tokens)
-      const parseRes = await fetch('/api/parse-statement', {
-        method: 'POST',
-        body: formData,
-      });
-      
+      const parseRes = await fetch('/api/parse-statement', { method: 'POST', body: formData });
       if (!parseRes.ok) throw new Error('Error analizando archivo');
       const { transactions: parsedTxs } = await parseRes.json();
 
@@ -219,7 +181,6 @@ export const useDashboardLogic = () => {
       let duplicateCount = 0;
       let errorCount = 0;
 
-      // E. Procesamiento Secuencial
       for (const tx of parsedTxs) {
         const status = await handleAddTransaction({
            description: tx.description,
@@ -230,49 +191,26 @@ export const useDashboardLogic = () => {
            date: tx.date,
            type: tx.type
         });
-
         if (status === 'created') createdCount++;
         else if (status === 'duplicate') duplicateCount++;
         else errorCount++;
       }
       
-      // F. Registrar en Bitácora (Si hubo éxito real)
       if (createdCount > 0 || duplicateCount > 0) {
           const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            await supabase.from('import_logs').insert({
-                user_id: user.id,
-                file_hash: fileHash,
-                file_name: file.name
-            });
-          }
+          if (user) await supabase.from('import_logs').insert({ user_id: user.id, file_hash: fileHash, file_name: file.name });
       }
 
-      // G. Notificación Final
       const details = [];
       let type: NotificationType = 'success';
-      let title = 'Proceso Completado';
+      if (createdCount > 0) details.push(`✅ ${createdCount} nuevos registros.`);
+      if (duplicateCount > 0) details.push(`⚠️ ${duplicateCount} ignorados (duplicados).`);
+      if (errorCount > 0) { details.push(`❌ ${errorCount} errores.`); if (createdCount === 0) type = 'error'; }
 
-      if (createdCount > 0) details.push(`✅ ${createdCount} nuevos registros guardados.`);
-      if (duplicateCount > 0) {
-          details.push(`⚠️ ${duplicateCount} transacciones ya existían (ignoradas).`);
-          if (createdCount === 0) { type = 'warning'; title = 'Sin Novedades'; }
-      }
-      if (errorCount > 0) {
-          details.push(`❌ ${errorCount} errores.`);
-          if (createdCount === 0) type = 'error';
-      }
-
-      setNotification({ isOpen: true, type, title, details });
+      setNotification({ isOpen: true, type, title: 'Proceso Completado', details });
       
     } catch (error) {
-      console.error("Upload error:", error);
-      setNotification({ 
-          isOpen: true, 
-          type: 'error', 
-          title: 'Error de Lectura', 
-          details: ['No se pudo procesar el archivo. Verifica el formato.'] 
-      });
+      setNotification({ isOpen: true, type: 'error', title: 'Error de Lectura', details: ['No se pudo procesar el archivo.'] });
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = ''; 
@@ -281,7 +219,7 @@ export const useDashboardLogic = () => {
 
   const closeNotification = () => setNotification(prev => ({ ...prev, isOpen: false }));
 
-  // --- TAREAS HANDLERS ---
+  // --- TAREAS Y PERFIL ---
   const handleAddTask = async (taskData: { title: string; impact: 'high' | 'medium' | 'low'; dueDate: string }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -307,7 +245,6 @@ export const useDashboardLogic = () => {
     await supabase.from('tasks').update({ blocked: isBlocked, blocker_description: isBlocked ? reason : null }).eq('id', id);
   };
 
-  // --- PERFIL HANDLERS ---
   const updateProfile = async (field: string, value: number) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -320,17 +257,43 @@ export const useDashboardLogic = () => {
     window.location.href = '/login'; 
   };
 
-  // --- KPIS & PROJECCIONES ---
+  // --- KPIS (Doble Modo: Anual vs Rolling) ---
   const availableYears = useMemo(() => [2025, 2026], []);
-  const filteredTransactions = useMemo(() => transactions.filter(t => new Date(t.date).getFullYear() === selectedYear), [transactions, selectedYear]);
+  
+  const kpiData = useMemo(() => {
+    const now = new Date();
+    const isRolling = metricMode === 'rolling';
+    
+    let relevantTxs = [];
+    let divisor = 1;
+
+    if (isRolling) {
+      const oneYearAgo = new Date();
+      oneYearAgo.setFullYear(now.getFullYear() - 1);
+      relevantTxs = transactions.filter(t => new Date(t.date) >= oneYearAgo && new Date(t.date) <= now);
+      divisor = 12;
+    } else {
+      relevantTxs = transactions.filter(t => new Date(t.date).getFullYear() === selectedYear);
+      const isCurrentYear = selectedYear === now.getFullYear();
+      divisor = isCurrentYear ? (now.getMonth() + 1) : 12;
+    }
+
+    const totalExpense = relevantTxs.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amountUSD, 0);
+    const avgMonthlyExpense = totalExpense / (divisor || 1);
+    
+    const variance = Number((monthlyIncome - avgMonthlyExpense).toFixed(0));
+    const savingsRate = monthlyIncome > 0 ? Math.round(((monthlyIncome - avgMonthlyExpense) / monthlyIncome) * 100) : 0;
+    const runway = avgMonthlyExpense > 0 ? parseFloat((currentCash / avgMonthlyExpense).toFixed(1)) : 0;
+
+    return { variance, runway, savingsRate };
+  }, [metricMode, transactions, selectedYear, monthlyIncome, currentCash]);
   
   const projectedData = useMemo(() => {
-    if (annualBudget === 0 && filteredTransactions.length === 0) return [];
+    if (annualBudget === 0 && transactions.length === 0) return [];
     const monthlyExpenses = new Array(12).fill(0);
-    filteredTransactions.forEach(t => {
+    transactions.filter(t => new Date(t.date).getFullYear() === selectedYear).forEach(t => {
       if (t.type === 'expense') {
-        const parts = t.date.split('-');
-        const month = parseInt(parts[1], 10) - 1;
+        const month = new Date(t.date).getMonth();
         if (month >= 0 && month <= 11) monthlyExpenses[month] += t.amountUSD;
       }
     });
@@ -347,27 +310,12 @@ export const useDashboardLogic = () => {
       else accumReal += Math.round(monthlyPlan * expenseMultiplier);
       return { label: d.label, plan: Math.round(accumPlan), real: Math.round(accumReal) };
     });
-  }, [scenario, monthlyPlan, periodFilter, filteredTransactions, selectedYear, annualBudget]);
-
-  const kpiData = useMemo(() => {
-    const currentMonth = new Date().getMonth();
-    const isCurrentYear = selectedYear === new Date().getFullYear();
-    let realExpense = 0;
-    if (isCurrentYear) {
-       realExpense = filteredTransactions.filter(t => t.type === 'expense' && new Date(t.date).getMonth() === currentMonth).reduce((acc, t) => acc + t.amountUSD, 0);
-    } else {
-       realExpense = filteredTransactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amountUSD, 0) / 12;
-    }
-    const variance = Number((monthlyPlan - (realExpense || 0)).toFixed(0));
-    const savingsRate = monthlyIncome > 0 ? Math.round(((monthlyIncome - (realExpense || 0)) / monthlyIncome) * 100) : 0;
-    const avgBurn = realExpense > 0 ? realExpense : monthlyPlan;
-    const runwayCalc = avgBurn > 0 ? parseFloat((currentCash / avgBurn).toFixed(1)) : 0;
-    return { variance, runway: runwayCalc, savingsRate };
-  }, [monthlyPlan, currentCash, monthlyIncome, filteredTransactions, selectedYear]);
+  }, [scenario, monthlyPlan, transactions, selectedYear, annualBudget]);
 
   return {
     sidebarOpen, setSidebarOpen, activeView, setActiveView, isEntryOpen, setIsEntryOpen, isUploading, fileInputRef,
     transactions, setTransactions,
+    metricMode, setMetricMode, // Exportamos el estado del modo
     tasks, handleAddTask, handleToggleTask, handleDeleteTask, handleBlockTask,
     handleAddTransaction,
     handleFileUpload,
