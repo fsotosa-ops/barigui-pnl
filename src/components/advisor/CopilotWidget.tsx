@@ -1,19 +1,16 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Sparkles, Send, X, Bot, Maximize2, Minimize2 } from 'lucide-react';
+import { Sparkles, Send, X, Bot, Maximize2, Minimize2, Trash2 } from 'lucide-react';
 
 interface CopilotProps {
   contextData: any;
 }
 
-// Función simple para formatear texto (Markdown lite)
 const formatMessage = (text: string) => {
   return text
     .split('\n')
     .map((line, i) => {
-      // Negritas: **texto** -> <strong>texto</strong>
       const bolded = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      
       if (line.trim().startsWith('-')) {
         return <li key={i} className="ml-4 list-disc marker:text-emerald-500 pl-1 mb-1" dangerouslySetInnerHTML={{ __html: bolded.substring(1) }} />;
       }
@@ -30,9 +27,14 @@ export const CopilotWidget = ({ contextData }: CopilotProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const hasInitialized = useRef(false);
 
+  // 1. CARGAR HISTORIAL AL INICIO
   useEffect(() => {
-    if (!hasInitialized.current && contextData) {
-      // Saludo inicial proactivo (simulado para UX inmediata)
+    const saved = localStorage.getItem('fluxo_chat_history');
+    if (saved) {
+      setMessages(JSON.parse(saved));
+      hasInitialized.current = true;
+    } else if (!hasInitialized.current && contextData) {
+      // Mensaje inicial si no hay historial
       setTimeout(() => {
          setMessages([{ role: 'bot', text: '¡Hola! Soy Fluxo. 🧠\nVeo tus números al día. ¿En qué te ayudo a ahorrar hoy?' }]);
       }, 1000);
@@ -40,8 +42,11 @@ export const CopilotWidget = ({ contextData }: CopilotProps) => {
     }
   }, [contextData]);
 
-  // Auto-scroll al fondo
+  // 2. GUARDAR HISTORIAL AL CAMBIAR
   useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem('fluxo_chat_history', JSON.stringify(messages));
+    }
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
@@ -52,7 +57,8 @@ export const CopilotWidget = ({ contextData }: CopilotProps) => {
     
     const userMsg = query;
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    const newMessages = [...messages, { role: 'user', text: userMsg } as const];
+    setMessages(newMessages);
     setLoading(true);
 
     try {
@@ -69,9 +75,15 @@ export const CopilotWidget = ({ contextData }: CopilotProps) => {
     }
   };
 
+  const clearHistory = () => {
+    if(confirm('¿Borrar historial de chat?')) {
+        setMessages([{ role: 'bot', text: 'Historial borrado. ¿En qué te ayudo ahora?' }]);
+        localStorage.removeItem('fluxo_chat_history');
+    }
+  };
+
   return (
     <>
-      {/* VENTANA DEL CHAT */}
       {isOpen && (
         <div 
           className={`fixed right-4 md:right-8 bg-white rounded-[2rem] shadow-2xl border border-slate-100 flex flex-col overflow-hidden transition-all duration-300 z-[60] font-sans ${
@@ -80,8 +92,6 @@ export const CopilotWidget = ({ contextData }: CopilotProps) => {
               : 'bottom-32 w-[90vw] md:w-96 h-[550px]'
           }`}
         >
-          
-          {/* Header */}
           <div className="bg-slate-950 p-4 px-6 flex justify-between items-center shrink-0">
             <div className="flex items-center gap-4">
                <div className="bg-emerald-500 p-2 rounded-2xl shadow-lg shadow-emerald-500/20">
@@ -96,32 +106,20 @@ export const CopilotWidget = ({ contextData }: CopilotProps) => {
                </div>
             </div>
             <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => setIsExpanded(!isExpanded)} 
-                  className="text-slate-400 hover:text-white hover:bg-white/10 p-2 rounded-xl transition-all"
-                >
-                  {isExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-                </button>
-                <button 
-                  onClick={() => setIsOpen(false)} 
-                  className="text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded-xl transition-all"
-                >
-                  <X size={18}/>
-                </button>
+                <button onClick={clearHistory} className="text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded-xl transition-all" title="Borrar historial"><Trash2 size={16} /></button>
+                <button onClick={() => setIsExpanded(!isExpanded)} className="text-slate-400 hover:text-white hover:bg-white/10 p-2 rounded-xl transition-all">{isExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>
+                <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded-xl transition-all"><X size={18}/></button>
             </div>
           </div>
 
-          {/* Área de Mensajes */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 scroll-smooth">
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-                
                 {m.role === 'bot' && (
                     <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center mr-3 shrink-0 mt-1">
                         <Bot size={16} className="text-emerald-700" />
                     </div>
                 )}
-
                 <div className={`max-w-[80%] p-4 rounded-[1.5rem] text-sm shadow-sm relative ${
                   m.role === 'user' 
                     ? 'bg-slate-900 text-white rounded-tr-sm' 
@@ -146,7 +144,6 @@ export const CopilotWidget = ({ contextData }: CopilotProps) => {
             )}
           </div>
 
-          {/* Input Area */}
           <div className="p-4 bg-white border-t border-slate-100 shrink-0">
              <div className="relative flex items-center gap-2">
                 <input 
@@ -169,8 +166,7 @@ export const CopilotWidget = ({ contextData }: CopilotProps) => {
         </div>
       )}
 
-      {/* BOTÓN FLOTANTE */}
-      <div className="fixed bottom-28 right-10 z-50 flex flex-col items-center gap-2">
+      <div className="fixed bottom-28 right-6 md:bottom-28 md:right-10 z-50 flex flex-col items-center gap-2">
          {!isOpen && (
             <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 rounded-full border-[3px] border-slate-50 flex items-center justify-center z-50 animate-bounce">
                <span className="text-[9px] font-black text-white">1</span>

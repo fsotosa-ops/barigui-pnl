@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, UploadCloud, Loader2, Calendar, Menu } from 'lucide-react';
 
 // Layout & Visuals
@@ -28,14 +28,34 @@ export default function OperationalDash() {
     setMounted(true);
   }, []);
 
+  // --- PREPARACIÓN DE DATOS PARA EL CEREBRO DE LA IA ---
+  const categoryBreakdown = useMemo(() => {
+    const breakdown: Record<string, number> = {};
+    logic.transactions.forEach(t => {
+        if (t.type === 'expense') {
+            breakdown[t.category] = (breakdown[t.category] || 0) + t.amountUSD;
+        }
+    });
+    // Convertir a array ordenado para el prompt
+    return Object.entries(breakdown)
+        .map(([cat, amount]) => ({ category: cat, total: Math.round(amount) }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5); // Top 5 gastos
+  }, [logic.transactions]);
+
   const advisorContext = {
     kpi: logic.kpiData,
-    budget: { annual: logic.annualBudget, cash: logic.currentCash },
+    budget: { 
+        annual: logic.annualBudget, 
+        monthly_limit: Math.round(logic.annualBudget / 12),
+        current_cash: logic.currentCash,
+        monthly_income: logic.monthlyIncome
+    },
+    spending_analysis: {
+        top_expenses: categoryBreakdown,
+        total_expense_last_30_days: categoryBreakdown.reduce((acc, curr) => acc + curr.total, 0)
+    },
     activeTasks: logic.tasks.filter(t => !t.completed).map(t => ({ title: t.title, priority: t.impact })),
-    recentExpenses: logic.transactions
-        .filter(t => t.type === 'expense')
-        .slice(0, 5)
-        .map(t => ({ desc: t.description, amount: t.amountUSD }))
   };
 
   return (
@@ -119,12 +139,10 @@ export default function OperationalDash() {
             <>
               <MetricGrid data={logic.kpiData} />
               
-              {/* CHART CARD SIN SCROLL FORZADO */}
+              {/* CHART CARD */}
               <div className="bg-white p-5 md:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
                  
-                 {/* Cabecera del Gráfico con Wrap */}
                  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-6 z-10 relative">
-                    
                     <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
                         <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2 shrink-0">
                            <Calendar size={18} className="text-emerald-500"/>
@@ -175,8 +193,8 @@ export default function OperationalDash() {
                     </div>
                  </div>
 
-                 {/* Gráfico Responsive: Ocupa el 100% del ancho del padre */}
-                 <div className="w-full">
+                 <div className="overflow-x-auto -mx-5 px-5 md:mx-0 md:px-0 no-scrollbar">
+                    <div className="min-w-[600px] md:min-w-0">
                       <TimelineFilter 
                           data={logic.projectedData} 
                           period={logic.periodFilter} 
@@ -186,6 +204,7 @@ export default function OperationalDash() {
                           runway={logic.kpiData.runway}
                           headless={true} 
                       />
+                    </div>
                  </div>
               </div>
 
@@ -211,7 +230,6 @@ export default function OperationalDash() {
             </>
           )}
 
-          {/* OTRAS VISTAS (sin cambios en estructura, ya son responsivas) */}
           {logic.activeView === 'roadmap' && (
              <div className="bg-white p-4 md:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[600px]">
                 <RoadmapList 
@@ -243,7 +261,6 @@ export default function OperationalDash() {
         </div>
       </main>
 
-      {/* ELEMENTOS FLOTANTES */}
       <button 
         onClick={() => logic.setIsEntryOpen(true)} 
         className="fixed bottom-8 right-6 md:bottom-10 md:right-10 bg-slate-900 text-white w-14 h-14 md:w-16 md:h-16 rounded-[1.5rem] shadow-2xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-40 border-[4px] md:border-[6px] border-white group"
