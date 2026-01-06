@@ -28,6 +28,7 @@ export default function OperationalDash() {
     setMounted(true);
   }, []);
 
+  // --- PREPARACIÓN DE DATOS PARA EL CEREBRO DE LA IA ---
   const categoryBreakdown = useMemo(() => {
     const breakdown: Record<string, number> = {};
     logic.transactions.forEach(t => {
@@ -35,10 +36,11 @@ export default function OperationalDash() {
             breakdown[t.category] = (breakdown[t.category] || 0) + t.amountUSD;
         }
     });
+    // Convertir a array ordenado para el prompt
     return Object.entries(breakdown)
         .map(([cat, amount]) => ({ category: cat, total: Math.round(amount) }))
         .sort((a, b) => b.total - a.total)
-        .slice(0, 5); 
+        .slice(0, 5); // Top 5 gastos
   }, [logic.transactions]);
 
   const advisorContext = {
@@ -96,7 +98,7 @@ export default function OperationalDash() {
               {logic.activeView === 'dash' ? 'Fluxo Control Centre' : 
                logic.activeView === 'transactions' ? 'Registro de Flujos' : 
                logic.activeView === 'roadmap' ? 'Roadmap Estratégico' : 
-               'Planning Financiero'} {/* NOMBRE ACTUALIZADO */}
+               'Planning Financiero'}
             </h1>
             <p className="text-sm text-slate-400 mt-1 font-medium">
                {logic.activeView === 'roadmap' ? 'Gestión de Hitos y Prioridades' : 
@@ -137,16 +139,18 @@ export default function OperationalDash() {
           {/* VISTA DASHBOARD */}
           {logic.activeView === 'dash' && (
             <>
-              {/* METRIC GRID CON SWITCH DE MODO */}
+              {/* METRIC GRID CON SWITCH DE MODO Y MONEDA */}
               <MetricGrid 
                  data={logic.kpiData} 
                  mode={logic.metricMode} 
-                 setMode={logic.setMetricMode} 
+                 setMode={logic.setMetricMode}
+                 currency={logic.displayCurrency}
+                 setCurrency={logic.setDisplayCurrency}
               />
               
               {/* CHART CARD */}
               <div className="bg-white p-5 md:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
-                 {/* ... (Contenido del gráfico igual que antes) ... */}
+                 
                  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-6 z-10 relative">
                     <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
                         <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2 shrink-0">

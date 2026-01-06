@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Transaction, Task } from '@/types/finance';
 import { NotificationType } from '@/components/ui/ProcessNotification';
+import { useExchangeRates } from '@/hooks/useExchangeRates';
 
 const generateFileHash = (file: File) => {
   return `${file.name}_${file.size}_${file.lastModified}`;
@@ -13,11 +14,13 @@ const generateFileHash = (file: File) => {
 export const useDashboardLogic = () => {
   const router = useRouter();
   const supabase = createClient();
+  const { rates } = useExchangeRates(); // Acceso a tasas de cambio
 
   // --- UI STATE ---
   const [activeView, setActiveView] = useState<'dash' | 'transactions' | 'settings' | 'roadmap'>('dash');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [metricMode, setMetricMode] = useState<'annual' | 'rolling'>('rolling'); // NUEVO ESTADO
+  const [metricMode, setMetricMode] = useState<'annual' | 'rolling'>('rolling');
+  const [displayCurrency, setDisplayCurrency] = useState<string>('USD'); // Estado para el selector de moneda
   
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -219,7 +222,7 @@ export const useDashboardLogic = () => {
 
   const closeNotification = () => setNotification(prev => ({ ...prev, isOpen: false }));
 
-  // --- TAREAS Y PERFIL ---
+  // --- TAREAS HANDLERS ---
   const handleAddTask = async (taskData: { title: string; impact: 'high' | 'medium' | 'low'; dueDate: string }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -257,7 +260,7 @@ export const useDashboardLogic = () => {
     window.location.href = '/login'; 
   };
 
-  // --- KPIS (Doble Modo: Anual vs Rolling) ---
+  // --- KPIS CON CONVERSIÓN DINÁMICA ---
   const availableYears = useMemo(() => [2025, 2026], []);
   
   const kpiData = useMemo(() => {
@@ -278,15 +281,25 @@ export const useDashboardLogic = () => {
       divisor = isCurrentYear ? (now.getMonth() + 1) : 12;
     }
 
-    const totalExpense = relevantTxs.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amountUSD, 0);
-    const avgMonthlyExpense = totalExpense / (divisor || 1);
+    // Cálculos en USD Base
+    const totalExpenseUSD = relevantTxs.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amountUSD, 0);
+    const avgMonthlyExpenseUSD = totalExpenseUSD / (divisor || 1);
     
-    const variance = Number((monthlyIncome - avgMonthlyExpense).toFixed(0));
-    const savingsRate = monthlyIncome > 0 ? Math.round(((monthlyIncome - avgMonthlyExpense) / monthlyIncome) * 100) : 0;
-    const runway = avgMonthlyExpense > 0 ? parseFloat((currentCash / avgMonthlyExpense).toFixed(1)) : 0;
+    const varianceUSD = monthlyIncome - avgMonthlyExpenseUSD;
+    const savingsRate = monthlyIncome > 0 ? Math.round(((monthlyIncome - avgMonthlyExpenseUSD) / monthlyIncome) * 100) : 0;
+    const runway = avgMonthlyExpenseUSD > 0 ? parseFloat((currentCash / avgMonthlyExpenseUSD).toFixed(1)) : 0;
 
-    return { variance, runway, savingsRate };
-  }, [metricMode, transactions, selectedYear, monthlyIncome, currentCash]);
+    // Conversión a Moneda de Visualización
+    const rate = rates[displayCurrency] || 1;
+    const convert = (val: number) => val * rate;
+
+    return { 
+      variance: convert(varianceUSD), // Se devuelve convertido
+      runway, // Meses no cambian por moneda
+      savingsRate, // Porcentaje no cambia por moneda
+      currency: displayCurrency 
+    };
+  }, [metricMode, displayCurrency, transactions, selectedYear, monthlyIncome, currentCash, rates]);
   
   const projectedData = useMemo(() => {
     if (annualBudget === 0 && transactions.length === 0) return [];
@@ -315,7 +328,8 @@ export const useDashboardLogic = () => {
   return {
     sidebarOpen, setSidebarOpen, activeView, setActiveView, isEntryOpen, setIsEntryOpen, isUploading, fileInputRef,
     transactions, setTransactions,
-    metricMode, setMetricMode, // Exportamos el estado del modo
+    metricMode, setMetricMode,
+    displayCurrency, setDisplayCurrency, // Exportamos controles de moneda
     tasks, handleAddTask, handleToggleTask, handleDeleteTask, handleBlockTask,
     handleAddTransaction,
     handleFileUpload,
