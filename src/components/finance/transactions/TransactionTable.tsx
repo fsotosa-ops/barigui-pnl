@@ -25,7 +25,7 @@ export const TransactionTable = ({ transactions, onEdit, onDelete }: Transaction
           {transactions.map((t) => (
             <tr key={t.id} className="group hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
               <td className="py-4 pl-2 font-bold text-slate-400 tabular-nums">
-                {t.date.split('-').slice(1).reverse().join('/')}
+                {new Date(t.date).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' })}
               </td>
               <td className="py-4">
                 <div className="flex flex-col gap-0.5">
@@ -34,39 +34,33 @@ export const TransactionTable = ({ transactions, onEdit, onDelete }: Transaction
                       <ArrowUpRight size={10} className="text-emerald-500" /> : 
                       <ArrowDownLeft size={10} className="text-rose-500" />
                     }
-                    <span className="font-bold text-slate-700 truncate max-w-[120px] md:max-w-[200px]">{t.description}</span>
+                    <span className="font-bold text-slate-700 truncate max-w-[200px]">{t.description}</span>
                   </div>
                   <span className="text-[9px] font-black uppercase text-slate-300 tracking-tighter">{t.category}</span>
                 </div>
               </td>
-              {/* MONTO ORIGINAL REINTEGRADO */}
               <td className="py-4 text-right font-medium text-slate-400 tabular-nums">
                 <div className="flex items-center justify-end gap-1">
-                   {t.originalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })}
-                   <span className="text-[9px] font-black text-slate-300 bg-slate-100 px-1.5 py-0.5 rounded uppercase tracking-tighter">
+                   {t.originalAmount.toLocaleString('es-CL')}
+                   <span className="text-[9px] font-black text-slate-300 bg-slate-100 px-1.5 py-0.5 rounded uppercase">
                      {t.originalCurrency}
                    </span>
                 </div>
               </td>
               <td className={`py-4 text-right pr-4 font-black tabular-nums text-sm ${t.type === 'income' ? 'text-emerald-500' : 'text-slate-800'}`}>
-                {t.type === 'income' ? '+' : '-'}${t.amountUSD.toLocaleString(undefined, { minimumFractionDigits: 0 })}
+                {/* MOSTRAR USD REAL CON DECIMALES */}
+                {t.type === 'income' ? '+' : '-'}${t.amountUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </td>
               <td className="py-4">
-                <div className="flex justify-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => onEdit(t)} className="p-2 text-slate-400 hover:text-blue-500 transition-colors active:scale-90"><Edit2 size={14} /></button>
-                  <button onClick={() => onDelete(t.id)} className="p-2 text-slate-400 hover:text-rose-500 transition-colors active:scale-90"><Trash2 size={14} /></button>
+                <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => onEdit(t)} className="p-2 text-slate-400 hover:text-blue-500"><Edit2 size={14} /></button>
+                  <button onClick={() => onDelete(t.id)} className="p-2 text-slate-400 hover:text-rose-500"><Trash2 size={14} /></button>
                 </div>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {transactions.length === 0 && (
-        <div className="py-20 text-center flex flex-col items-center gap-2">
-            <div className="p-4 bg-slate-50 rounded-full text-slate-300"><List size={32}/></div>
-            <p className="text-slate-300 font-bold uppercase text-[10px] tracking-widest">Sin movimientos registrados</p>
-        </div>
-      )}
     </div>
   );
 };

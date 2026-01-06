@@ -1,6 +1,9 @@
 'use client';
 import { useState, useMemo } from 'react';
-import { Plus, Search, ChevronLeft, ChevronRight, PieChart, List, BarChart3, TrendingUp, TrendingDown, FilterX, Globe } from 'lucide-react';
+import { 
+  Plus, Search, ChevronLeft, ChevronRight, PieChart, 
+  List, BarChart3, TrendingUp, TrendingDown, FilterX, Globe 
+} from 'lucide-react';
 import { Transaction } from '@/types/finance';
 import { TransactionTable } from './TransactionTable';
 import { TransactionForm } from './TransactionForm';
@@ -29,7 +32,8 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd, onDel
 
   const itemsPerPage = 25;
 
-  const uniqueCategories = useMemo(() => {
+  // FIX: Definición correcta y tipada de categorías únicas
+  const uniqueCategories = useMemo<string[]>(() => {
     const cats = new Set(transactions.map(t => t.category));
     return Array.from(cats).sort();
   }, [transactions]);
@@ -125,7 +129,6 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd, onDel
   return (
     <div className="flex flex-col gap-6 animate-in fade-in duration-500 pb-20">
       
-      {/* HEADER DE LA SECCIÓN CON SELECTOR DE MONEDA */}
       <div className="flex justify-end">
         <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm">
            <div className="pl-2 text-slate-400"><Globe size={14}/></div>
@@ -144,7 +147,6 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd, onDel
         </div>
       </div>
 
-      {/* 1. BALANCE CARDS CON MONEDA DINÁMICA */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4">
           <div className="p-3 bg-emerald-50 text-emerald-500 rounded-2xl"><TrendingUp size={24}/></div>
@@ -171,7 +173,6 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd, onDel
 
       <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm p-5 md:p-8 flex flex-col min-h-[600px]">
         
-        {/* HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div className="flex bg-slate-100 p-1 rounded-2xl w-full md:w-auto">
             <button onClick={() => setViewMode('list')} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all ${viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}><List size={16}/> Listado</button>
@@ -182,7 +183,6 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd, onDel
 
         {viewMode === 'list' ? (
           <>
-             {/* FILTROS */}
              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <div className="md:col-span-2 relative">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
@@ -190,7 +190,8 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd, onDel
               </div>
               <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setCurrentPage(1); }} className="bg-slate-50 rounded-2xl py-3 px-4 text-xs font-bold text-slate-600 outline-none border border-transparent focus:border-slate-200 focus:bg-white transition-all appearance-none cursor-pointer">
                 <option value="all">Todas las Categorías</option>
-                {uniqueCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                {/* FIX: Tipado explícito de 'cat' como string */}
+                {uniqueCategories.map((cat: string) => <option key={cat} value={cat}>{cat}</option>)}
               </select>
               <div className="flex gap-2">
                 <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }} className="flex-1 bg-slate-50 rounded-2xl py-3 px-4 text-xs font-bold text-slate-600 outline-none border border-transparent focus:border-slate-200 focus:bg-white transition-all appearance-none cursor-pointer">
@@ -208,7 +209,6 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd, onDel
               <TransactionTable 
                 transactions={paginatedTransactions} 
                 onEdit={(t) => { setEditingItem(t); setIsModalOpen(true); }} 
-                // AQUÍ CONECTAMOS EL BORRADO REAL
                 onDelete={(id) => confirm('¿Eliminar registro permanentemente?') && onDelete && onDelete(id)} 
               />
             </div>
@@ -224,14 +224,13 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd, onDel
           </>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 animate-in slide-in-from-bottom-4 duration-500 min-h-[500px]">
-            {/* COMPARATIVO DE BARRAS */}
             <div className="flex flex-col h-full space-y-6">
                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Comparativo Global</h3>
                <div className="bg-slate-50 p-6 md:p-10 rounded-[2rem] flex-1 min-h-[350px] relative overflow-hidden flex flex-col justify-end">
                   <div className="flex h-full pb-8 items-end">
                       <div className="flex flex-col justify-between h-full pr-4 border-r border-slate-200 text-[9px] font-black text-slate-300 uppercase shrink-0 tabular-nums text-right pb-8 pt-2">
-                          <span>${financialAnalysis.chartMax.toLocaleString()}</span>
-                          <span>${Math.round(financialAnalysis.chartMax / 2).toLocaleString()}</span>
+                          <span>$MAX</span>
+                          <span>$MID</span>
                           <span>$0</span>
                       </div>
                       <div className="flex-1 flex items-end justify-around h-full px-4 relative pb-8">
@@ -241,7 +240,7 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd, onDel
                           
                           <div className="relative h-full w-24 flex items-end justify-center group z-10">
                               <div className="w-full bg-emerald-500 rounded-t-2xl shadow-lg shadow-emerald-500/20 transition-all duration-1000 ease-out relative"
-                                  style={{ height: `${(financialAnalysis.totalIncome / financialAnalysis.chartMax) * 100}%`, minHeight: '6px' }}>
+                                  style={{ height: `${(financialAnalysis.totalIncome / (financialAnalysis.chartMax || 1)) * 100}%`, minHeight: '6px' }}>
                                   <span className="absolute -top-9 left-1/2 -translate-x-1/2 text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-sm border border-emerald-100 pointer-events-none">
                                       {formatMoney(financialAnalysis.totalIncome)}
                                   </span>
@@ -251,7 +250,7 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd, onDel
 
                           <div className="relative h-full w-24 flex items-end justify-center group z-10">
                               <div className="w-full bg-rose-500 rounded-t-2xl shadow-lg shadow-rose-500/20 transition-all duration-1000 ease-out relative"
-                                  style={{ height: `${(financialAnalysis.totalExpense / financialAnalysis.chartMax) * 100}%`, minHeight: '6px' }}>
+                                  style={{ height: `${(financialAnalysis.totalExpense / (financialAnalysis.chartMax || 1)) * 100}%`, minHeight: '6px' }}>
                                   <span className="absolute -top-9 left-1/2 -translate-x-1/2 text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-sm border border-rose-100 pointer-events-none">
                                       {formatMoney(financialAnalysis.totalExpense)}
                                   </span>
@@ -263,7 +262,6 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd, onDel
                </div>
             </div>
 
-            {/* DISTRIBUCIÓN POR CATEGORÍA */}
             <div className="flex flex-col h-full">
                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6">Distribución de Gastos</h3>
                <div className="flex-1 flex flex-col justify-center">
@@ -283,11 +281,6 @@ export const TransactionManager = ({ transactions, setTransactions, onAdd, onDel
                             </div>
                         </div>
                       ))}
-                      {financialAnalysis.categoryStats.filter(c => c.type === 'expense').length === 0 && (
-                        <div className="h-32 flex items-center justify-center border-2 border-dashed border-slate-100 rounded-[2rem] text-slate-300 text-xs font-bold uppercase tracking-widest">
-                            Sin datos de gastos
-                        </div>
-                      )}
                   </div>
                </div>
             </div>

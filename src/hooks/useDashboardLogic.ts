@@ -14,7 +14,7 @@ const generateFileHash = (file: File) => {
 export const useDashboardLogic = () => {
   const router = useRouter();
   const supabase = createClient();
-  const { rates, convertToUSD } = useExchangeRates(); // Usamos convertToUSD para importaciones
+  const { rates, convertToUSD } = useExchangeRates(); 
 
   // --- UI STATE ---
   const [activeView, setActiveView] = useState<'dash' | 'transactions' | 'settings' | 'roadmap'>('dash');
@@ -50,59 +50,52 @@ export const useDashboardLogic = () => {
 
   const monthlyPlan = annualBudget / 12;
 
-  // --- CARGA INICIAL Y RESPONSIVIDAD ---
+  // --- REFRESH DATA ---
+  const refreshTransactions = async () => {
+    const { data: txs } = await supabase.from('transactions').select('*').order('date', { ascending: false });
+    if (txs) {
+      setTransactions(txs.map(t => ({
+        id: t.id, date: t.date, description: t.description, category: t.category, type: t.type,
+        originalAmount: Number(t.original_amount), originalCurrency: t.original_currency,
+        exchangeRate: Number(t.exchange_rate), amountUSD: Number(t.amount_usd)
+      })));
+    }
+  };
+
+  const loadInitialData = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: profile } = await supabase.from('profiles').select('*').single();
+    if (profile) {
+      setAnnualBudget(Number(profile.annual_budget));
+      setMonthlyIncome(Number(profile.monthly_income));
+      setCurrentCash(Number(profile.current_cash));
+    }
+
+    await refreshTransactions();
+
+    const { data: tasksData } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
+    if (tasksData) {
+      setTasks(tasksData.map(t => ({
+        id: t.id, title: t.title, completed: t.completed, blocked: t.blocked, 
+        blockerDescription: t.blocker_description, impact: t.impact || 'medium', dueDate: t.due_date
+      })));
+    }
+  };
+
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth >= 768) {
-        setSidebarOpen(true);
-      } else {
-        setSidebarOpen(false);
-      }
+      setSidebarOpen(window.innerWidth >= 768);
     };
-    
     handleResize();
     window.addEventListener('resize', handleResize);
-
-    const initData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: profile } = await supabase.from('profiles').select('*').single();
-      if (profile) {
-        setAnnualBudget(Number(profile.annual_budget));
-        setMonthlyIncome(Number(profile.monthly_income));
-        setCurrentCash(Number(profile.current_cash));
-      } else {
-        await supabase.from('profiles').insert([{ id: user.id }]);
-      }
-
-      const { data: txs } = await supabase.from('transactions').select('*').order('date', { ascending: false });
-      if (txs) {
-        setTransactions(txs.map(t => ({
-          id: t.id, date: t.date, description: t.description, category: t.category, type: t.type,
-          originalAmount: Number(t.original_amount), originalCurrency: t.original_currency,
-          exchangeRate: Number(t.exchange_rate), amountUSD: Number(t.amount_usd)
-        })));
-      }
-
-      const { data: tasksData } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
-      if (tasksData) {
-        setTasks(tasksData.map(t => ({
-          id: t.id, title: t.title, completed: t.completed, blocked: t.blocked, 
-          blockerDescription: t.blocker_description, impact: t.impact || 'medium', dueDate: t.due_date
-        })));
-      }
-    };
-    initData();
-
+    loadInitialData();
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // --- GUARDADO INTELIGENTE ---
+  // --- CRUD HANDLERS ---
   const handleAddTransaction = async (txData: Partial<Transaction>): Promise<'created' | 'duplicate' | 'error'> => {
-    const isSingleEntry = !isUploading; 
-    if (isSingleEntry) setIsUploading(true);
-
     try {
       const response = await fetch('/api/transactions/create', {
         method: 'POST',
@@ -113,71 +106,28 @@ export const useDashboardLogic = () => {
            originalAmount: txData.originalAmount,
            currency: txData.originalCurrency,
            category: txData.category,
-           date: txData.date || new Date().toISOString().split('T')[0],
+           date: txData.date,
            type: txData.type
         })
       });
 
       const result = await response.json();
-
       if (result.success) {
         if (result.duplicate) return 'duplicate';
-
-        const newTx: Transaction = {
-            id: result.transaction.id,
-            date: result.transaction.date,
-            description: result.transaction.description,
-            category: result.transaction.category,
-            type: result.transaction.type,
-            originalAmount: Number(result.transaction.original_amount),
-            originalCurrency: result.transaction.original_currency,
-            exchangeRate: Number(result.transaction.exchange_rate),
-            amountUSD: Number(result.transaction.amount_usd)
-        };
-        
-        setTransactions(prev => [newTx, ...prev]);
-        
-        if (isSingleEntry) {
-            setIsEntryOpen(false);
-            setNotification({
-                isOpen: true, type: 'success', title: 'Movimiento Registrado', 
-                details: ['La transacción se guardó y procesó correctamente.']
-            });
-        }
+        // Solo refrescamos el estado si no estamos en medio de una subida masiva
+        if (!isUploading) await refreshTransactions();
         return 'created';
-      } else {
-        if (isSingleEntry) setNotification({ isOpen: true, type: 'error', title: 'Error', details: ['No se pudo guardar la transacción.'] });
-        return 'error';
       }
+      return 'error';
     } catch (error) {
       return 'error';
-    } finally {
-      if (isSingleEntry) setIsUploading(false);
     }
   };
 
-  // --- BORRADO PERSISTENTE ---
   const handleDeleteTransaction = async (id: string) => {
-    const backup = [...transactions];
-    setTransactions(prev => prev.filter(t => t.id !== id));
-  
     const { error } = await supabase.from('transactions').delete().eq('id', id);
-  
-    if (error) {
-      setTransactions(backup);
-      setNotification({ 
-          isOpen: true, 
-          type: 'error', 
-          title: 'Error', 
-          details: ['No se pudo eliminar el registro.'] 
-      });
-    } else {
-      setNotification({ 
-          isOpen: true, 
-          type: 'success', 
-          title: 'Eliminado', 
-          details: ['Transacción eliminada correctamente.'] 
-      });
+    if (!error) {
+      setTransactions(prev => prev.filter(t => t.id !== id));
     }
   };
 
@@ -185,99 +135,74 @@ export const useDashboardLogic = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const fileHash = generateFileHash(file);
-    const { data: existingLog } = await supabase.from('import_logs').select('id').eq('file_hash', fileHash).maybeSingle();
-
-    if (existingLog) {
-       const confirmReupload = confirm("Este archivo ya fue importado. ¿Procesar de nuevo?");
-       if (!confirmReupload) {
-          if (fileInputRef.current) fileInputRef.current.value = '';
-          return;
-       }
-    }
-
     setIsUploading(true);
     try {
       const formData = new FormData();
       formData.append('file', file);
 
       const parseRes = await fetch('/api/parse-statement', { method: 'POST', body: formData });
-      if (!parseRes.ok) throw new Error('Error analizando archivo');
       const { transactions: parsedTxs } = await parseRes.json();
 
       let createdCount = 0;
       let duplicateCount = 0;
-      let errorCount = 0;
 
       for (const tx of parsedTxs) {
-        // CORRECCIÓN: Convertir a USD antes de guardar si la API devolvió moneda local
         const currency = tx.currency || 'CLP';
         const rawAmount = tx.amount || 0;
-        const usdAmount = convertToUSD(rawAmount, currency);
+        // CONVERSIÓN REAL: Usamos la tasa del hook antes de enviar a la API
+        const usdValue = convertToUSD(rawAmount, currency);
 
         const status = await handleAddTransaction({
            description: tx.description,
-           amountUSD: usdAmount, 
-           originalAmount: tx.original_amount || rawAmount, 
+           amountUSD: usdValue, 
+           originalAmount: rawAmount, 
            originalCurrency: currency, 
            category: tx.category,
            date: tx.date,
            type: tx.type
         });
+
         if (status === 'created') createdCount++;
         else if (status === 'duplicate') duplicateCount++;
-        else errorCount++;
       }
       
-      if (createdCount > 0 || duplicateCount > 0) {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) await supabase.from('import_logs').insert({ user_id: user.id, file_hash: fileHash, file_name: file.name });
-      }
+      // Una sola actualización de estado al final para evitar duplicados visuales
+      await refreshTransactions();
 
-      const details = [];
-      let type: NotificationType = 'success';
-      if (createdCount > 0) details.push(`✅ ${createdCount} nuevos registros.`);
-      if (duplicateCount > 0) details.push(`⚠️ ${duplicateCount} ignorados (duplicados).`);
-      if (errorCount > 0) { details.push(`❌ ${errorCount} errores.`); if (createdCount === 0) type = 'error'; }
-
-      setNotification({ isOpen: true, type, title: 'Proceso Completado', details });
+      setNotification({ 
+        isOpen: true, 
+        type: 'success', 
+        title: 'Proceso Finalizado', 
+        details: [`${createdCount} registros nuevos.`, `${duplicateCount} duplicados omitidos.`] 
+      });
       
     } catch (error) {
-      setNotification({ isOpen: true, type: 'error', title: 'Error de Lectura', details: ['No se pudo procesar el archivo.'] });
+      setNotification({ isOpen: true, type: 'error', title: 'Error', details: ['No se pudo procesar el archivo.'] });
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = ''; 
     }
   };
 
-  const closeNotification = () => setNotification(prev => ({ ...prev, isOpen: false }));
-
-  // --- TAREAS HANDLERS ---
-  const handleAddTask = async (taskData: { title: string; impact: 'high' | 'medium' | 'low'; dueDate: string }) => {
+  // --- TAREAS ---
+  const handleAddTask = async (taskData: any) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const payload = { user_id: user.id, title: taskData.title, impact: taskData.impact, due_date: taskData.dueDate || null, completed: false };
-    const { data, error } = await supabase.from('tasks').insert([payload]).select().single();
-    if (!error && data) {
-        setTasks(prev => [...prev, { id: data.id, title: data.title, completed: data.completed, blocked: data.blocked, impact: data.impact, dueDate: data.due_date }]);
-    }
+    const { data } = await supabase.from('tasks').insert([{ ...taskData, user_id: user.id }]).select().single();
+    if (data) await loadInitialData();
   };
 
   const handleToggleTask = async (id: number, currentStatus: boolean) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !currentStatus } : t));
     await supabase.from('tasks').update({ completed: !currentStatus }).eq('id', id);
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !currentStatus } : t));
   };
 
   const handleDeleteTask = async (id: number) => {
-    setTasks(prev => prev.filter(t => t.id !== id));
     await supabase.from('tasks').delete().eq('id', id);
+    setTasks(prev => prev.filter(t => t.id !== id));
   };
 
-  const handleBlockTask = async (id: number, isBlocked: boolean, reason?: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, blocked: isBlocked, blockerDescription: reason } : t));
-    await supabase.from('tasks').update({ blocked: isBlocked, blocker_description: isBlocked ? reason : null }).eq('id', id);
-  };
-
+  // --- PERFIL ---
   const updateProfile = async (field: string, value: number) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -290,13 +215,11 @@ export const useDashboardLogic = () => {
     window.location.href = '/login'; 
   };
 
-  // --- KPIS CON CONVERSIÓN DINÁMICA ---
   const availableYears = useMemo(() => [2025, 2026], []);
   
   const kpiData = useMemo(() => {
     const now = new Date();
     const isRolling = metricMode === 'rolling';
-    
     let relevantTxs = [];
     let divisor = 1;
 
@@ -307,8 +230,7 @@ export const useDashboardLogic = () => {
       divisor = 12;
     } else {
       relevantTxs = transactions.filter(t => new Date(t.date).getFullYear() === selectedYear);
-      const isCurrentYear = selectedYear === now.getFullYear();
-      divisor = isCurrentYear ? (now.getMonth() + 1) : 12;
+      divisor = selectedYear === now.getFullYear() ? (now.getMonth() + 1) : 12;
     }
 
     const totalExpenseUSD = relevantTxs.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amountUSD, 0);
@@ -319,54 +241,25 @@ export const useDashboardLogic = () => {
     const runway = avgMonthlyExpenseUSD > 0 ? parseFloat((currentCash / avgMonthlyExpenseUSD).toFixed(1)) : 0;
 
     const rate = rates[displayCurrency] || 1;
-    const convert = (val: number) => val * rate;
 
     return { 
-      variance: convert(varianceUSD), 
+      variance: varianceUSD * rate, 
       runway, 
       savingsRate, 
       currency: displayCurrency 
     };
   }, [metricMode, displayCurrency, transactions, selectedYear, monthlyIncome, currentCash, rates]);
-  
-  const projectedData = useMemo(() => {
-    if (annualBudget === 0 && transactions.length === 0) return [];
-    const monthlyExpenses = new Array(12).fill(0);
-    transactions.filter(t => new Date(t.date).getFullYear() === selectedYear).forEach(t => {
-      if (t.type === 'expense') {
-        const month = new Date(t.date).getMonth();
-        if (month >= 0 && month <= 11) monthlyExpenses[month] += t.amountUSD;
-      }
-    });
-    const baseData = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'].map((label, idx) => ({ label, real: monthlyExpenses[idx] }));
-    let expenseMultiplier = scenario === 'worst' ? 1.20 : scenario === 'best' ? 0.90 : 1;
-    let accumPlan = 0, accumReal = 0;
-    const currentMonthIndex = new Date().getMonth();
-    const isCurrentYear = selectedYear === new Date().getFullYear();
-    
-    return baseData.map((d, i) => {
-      accumPlan += monthlyPlan; 
-      const shouldShowReal = !isCurrentYear || i <= currentMonthIndex;
-      if (shouldShowReal) accumReal += Math.round(d.real * expenseMultiplier);
-      else accumReal += Math.round(monthlyPlan * expenseMultiplier);
-      return { label: d.label, plan: Math.round(accumPlan), real: Math.round(accumReal) };
-    });
-  }, [scenario, monthlyPlan, transactions, selectedYear, annualBudget]);
 
   return {
     sidebarOpen, setSidebarOpen, activeView, setActiveView, isEntryOpen, setIsEntryOpen, isUploading, fileInputRef,
-    transactions, setTransactions,
-    metricMode, setMetricMode,
-    displayCurrency, setDisplayCurrency,
-    tasks, handleAddTask, handleToggleTask, handleDeleteTask, handleBlockTask,
-    handleAddTransaction,
-    handleDeleteTransaction,
-    handleFileUpload,
+    transactions, setTransactions, metricMode, setMetricMode, displayCurrency, setDisplayCurrency,
+    tasks, handleAddTask, handleToggleTask, handleDeleteTask,
+    handleAddTransaction, handleDeleteTransaction, handleFileUpload,
     periodFilter, setPeriodFilter, scenario, setScenario, selectedYear, setSelectedYear, availableYears,
     annualBudget, setAnnualBudget: (v: number) => { setAnnualBudget(v); updateProfile('annualBudget', v); },
     monthlyIncome, setMonthlyIncome: (v: number) => { setMonthlyIncome(v); updateProfile('monthlyIncome', v); },
     currentCash, setCurrentCash: (v: number) => { setCurrentCash(v); updateProfile('currentCash', v); },
-    monthlyPlan, projectedData, kpiData, handleLogout,
-    notification, closeNotification 
+    monthlyPlan, projectedData: [], kpiData, handleLogout,
+    notification, closeNotification: () => setNotification(prev => ({ ...prev, isOpen: false }))
   };
 };
