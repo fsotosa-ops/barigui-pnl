@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import { Wallet, DollarSign, Landmark, PiggyBank, HelpCircle } from 'lucide-react';
 
 interface FinancialSettingsProps {
@@ -10,17 +11,33 @@ interface FinancialSettingsProps {
   setCurrentCash: (val: number) => void;
 }
 
-// Pequeño componente interno para el Tooltip
-const InfoTooltip = ({ text }: { text: string }) => (
-  <div className="group relative ml-auto cursor-help">
-    <HelpCircle size={14} className="text-slate-300 hover:text-emerald-500 transition-colors" />
-    <div className="absolute bottom-full right-[-10px] mb-2 w-48 p-3 bg-slate-900 text-white text-[10px] font-medium leading-relaxed rounded-2xl opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none z-20 shadow-xl border border-slate-700 translate-y-2 group-hover:translate-y-0">
-      {text}
-      {/* Flechita del tooltip */}
-      <div className="absolute top-full right-4 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900"></div>
+// Componente Interno de Ayuda mejorado para Mobile
+const InfoTooltip = ({ text }: { text: string }) => {
+  const [isVisible, setIsVisible] = useState(false);
+
+  return (
+    <div 
+      className="group relative ml-auto cursor-help focus:outline-none"
+      onMouseEnter={() => setIsVisible(true)}
+      onMouseLeave={() => setIsVisible(false)}
+      onClick={() => setIsVisible(!isVisible)}
+      tabIndex={0} // Permite enfoque por teclado/toque
+    >
+      <HelpCircle size={14} className={`transition-colors ${isVisible ? 'text-emerald-500' : 'text-slate-300'}`} />
+      
+      {/* Burbuja del Tooltip */}
+      <div className={`
+        absolute bottom-full right-0 mb-2 w-56 p-3 bg-slate-900 text-white text-[10px] font-medium leading-relaxed rounded-2xl z-20 shadow-2xl border border-slate-700 transition-all duration-200
+        /* Lógica de visibilidad híbrida */
+        ${isVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-2 scale-95 pointer-events-none'}
+      `}>
+        {text}
+        {/* Flecha indicadora */}
+        <div className="absolute top-full right-1.5 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900"></div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export const FinancialSettings = ({
   annualBudget,
@@ -34,16 +51,16 @@ export const FinancialSettings = ({
   const monthlyPlan = annualBudget / 12;
 
   return (
-    <div className="bg-white p-6 md:p-10 rounded-[2.5rem] border border-slate-100 max-w-5xl mx-auto mt-8 shadow-sm">
+    <div className="bg-white p-6 md:p-10 rounded-[2.5rem] border border-slate-100 max-w-5xl mx-auto mt-4 md:mt-8 shadow-sm">
       <div className="text-center mb-10">
         <div className="inline-flex p-4 bg-emerald-50 rounded-full mb-4 text-emerald-600 shadow-sm">
           <Wallet size={40} />
         </div>
         <h3 className="text-2xl font-black text-slate-900 tracking-tight">Variables Financieras</h3>
-        <p className="text-slate-400 mt-2 text-sm font-medium">Ajusta los parámetros para recalcular tus proyecciones en tiempo real.</p>
+        <p className="text-slate-400 mt-2 text-sm font-medium italic md:not-italic">Ajusta los parámetros para recalcular tus proyecciones en tiempo real.</p>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* 1. PRESUPUESTO ANUAL */}
         <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 hover:border-slate-300 transition-colors group/card relative">
