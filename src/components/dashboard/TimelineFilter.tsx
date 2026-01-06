@@ -35,20 +35,17 @@ export const TimelineFilter = ({
   const paddingX = 40;
   const paddingY = 30;
 
-  // --- CORRECCIÓN CRÍTICA ---
-  // Calculamos maxVal de forma segura. Si data está vacío, usamos un fallback de 100.
+  // Calculamos maxVal de forma segura
   const allValues = data.flatMap(d => [d.plan, d.real]);
   const safeMax = allValues.length > 0 ? Math.max(...allValues) : 0;
-  // Evitamos que maxVal sea 0 (para no dividir por cero)
   const maxVal = (safeMax * 1.15) || 100;
   
   const getX = (index: number) => {
-    if (data.length <= 1) return paddingX; // Evitar división por cero si solo hay 1 dato
+    if (data.length <= 1) return paddingX; 
     return (index / (data.length - 1)) * (width - paddingX * 2) + paddingX;
   };
   
   const getY = (value: number) => {
-    // Protección extra contra NaN
     if (isNaN(value)) return height - paddingY;
     return height - ((value / maxVal) * (height - paddingY * 2)) - paddingY;
   };
@@ -81,7 +78,6 @@ export const TimelineFilter = ({
   const isOverBudget = lastPoint.real > lastPoint.plan;
   const themeColor = isOverBudget ? '#f43f5e' : '#10b981'; 
 
-  // Si no hay datos, mostramos un estado vacío elegante en lugar de romper
   if (data.length === 0) {
     return (
       <section className={headless ? "relative w-full" : "bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden"}>
@@ -94,46 +90,21 @@ export const TimelineFilter = ({
   }
 
   return (
-    <section className={headless ? "relative w-full" : "bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden"}>
+    <section className={headless ? "relative w-full" : "bg-white p-4 md:p-6 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden"}>
       
       {!headless && (
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4 z-10 relative">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <TrendingUp className={isOverBudget ? "text-rose-500" : "text-emerald-500"} size={20} />
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Flujo Acumulado</h3>
-            </div>
-            <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-              {['Mensual', 'Trimestral', 'Anual'].map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p as any)}
-                  className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase transition-all ${
-                    period === p ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
-              <ScenarioSelector current={scenario} onChange={setScenario} />
-              <div className="w-px h-6 bg-slate-200"></div>
-              <div className="px-3 text-right">
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Runway</p>
-                <p className={`text-lg font-black leading-none ${runway < 4 ? 'text-rose-500' : 'text-slate-900'}`}>
-                  {runway}m
-                </p>
-              </div>
-          </div>
+          {/* ... Header (sin cambios aquí, se maneja en page.tsx) ... */}
         </div>
       )}
 
-      {/* SVG del Gráfico */}
-      <div className="relative w-full aspect-[21/9] min-h-[220px]">
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
+      {/* SVG del Gráfico RESPONSIVE */}
+      <div className="relative w-full h-[220px]">
+        <svg 
+            viewBox={`0 0 ${width} ${height}`} 
+            preserveAspectRatio="none" 
+            className="w-full h-full overflow-visible"
+        >
             <defs>
                 <linearGradient id="gradientReal" x1="0" x2="0" y1="0" y2="1">
                     <stop offset="0%" stopColor={themeColor} stopOpacity="0.3" />
@@ -150,50 +121,62 @@ export const TimelineFilter = ({
             ))}
 
             <path d={buildArea(planPath)} fill="url(#gradientPlan)" />
-            <path d={planPath} fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 4" />
+            <path d={planPath} fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
 
             <path d={buildArea(realPath)} fill="url(#gradientReal)" />
-            <path d={realPath} fill="none" stroke={themeColor} strokeWidth="3" strokeLinecap="round" />
+            <path d={realPath} fill="none" stroke={themeColor} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
 
+            {/* Puntos interactivos - Ajustados para mobile */}
             {data.map((d, i) => (
                 <g key={i} onMouseEnter={() => setHoverIndex(i)} onMouseLeave={() => setHoverIndex(null)}>
-                    <circle cx={getX(i)} cy={getY(d.real)} r="30" fill="transparent" cursor="pointer" />
+                    {/* Área de toque más grande para dedo */}
+                    <circle cx={getX(i)} cy={getY(d.real)} r="40" fill="transparent" cursor="pointer" />
                     <circle 
                         cx={getX(i)} cy={getY(d.real)} 
-                        r={hoverIndex === i ? 6 : 0} 
-                        fill="white" stroke={themeColor} strokeWidth="2"
+                        r={hoverIndex === i ? 8 : 0} // Punto más grande al tocar
+                        fill="white" stroke={themeColor} strokeWidth="3"
                         className="transition-all duration-200"
+                        vectorEffect="non-scaling-stroke"
                     />
                 </g>
             ))}
         </svg>
 
-        <div className="flex justify-between px-8 mt-[-5px]">
+        {/* Etiquetas Eje X - Ocultamos algunas en móvil si son muchas */}
+        <div className="flex justify-between px-2 mt-2 w-full absolute bottom-0 left-0">
             {data.map((d, i) => (
-                <span key={i} className="text-[9px] font-bold text-slate-300 uppercase w-8 text-center">{d.label}</span>
+                <span key={i} className={`text-[8px] md:text-[9px] font-bold text-slate-300 uppercase w-8 text-center ${
+                   // En móvil, si hay más de 6 datos, ocultamos los impares para que no se solapen
+                   data.length > 6 && i % 2 !== 0 ? 'hidden md:block' : 'block'
+                }`}>
+                    {d.label}
+                </span>
             ))}
         </div>
 
-        {/* TOOLTIP */}
+        {/* TOOLTIP INTELIGENTE */}
         {hoverIndex !== null && data[hoverIndex] && (
             <div 
-                className="absolute top-0 pointer-events-none bg-slate-900/95 backdrop-blur text-white p-3 rounded-xl shadow-2xl z-50 transition-all duration-100 min-w-[140px]"
+                className="absolute top-0 pointer-events-none bg-slate-900/95 backdrop-blur text-white p-3 rounded-xl shadow-2xl z-50 transition-all duration-100 min-w-[120px]"
                 style={{ 
                     left: `${(hoverIndex / (data.length - 1)) * 100}%`, 
-                    top: '15%',
-                    transform: hoverIndex > data.length / 2 ? 'translate(-105%, 0)' : 'translate(5%, 0)' 
+                    top: '10%',
+                    // Lógica para que el tooltip no se salga de la pantalla
+                    transform: hoverIndex < 2 ? 'translate(5%, 0)' : 
+                               hoverIndex > data.length - 3 ? 'translate(-105%, 0)' : 
+                               'translate(-50%, -100%)' 
                 }}
             >
-                <p className="text-[10px] font-bold text-slate-400 mb-2 uppercase tracking-widest border-b border-slate-700 pb-1">
-                    {data[hoverIndex].label} Acumulado
+                <p className="text-[9px] font-bold text-slate-400 mb-1 uppercase tracking-widest border-b border-slate-700 pb-1">
+                    {data[hoverIndex].label}
                 </p>
                 <div className="space-y-1 text-xs">
-                    <div className="flex justify-between items-center">
-                       <span className="text-slate-400 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-400"></span>Plan</span> 
+                    <div className="flex justify-between items-center gap-2">
+                       <span className="text-slate-400">Plan</span> 
                        <span className="font-mono font-medium">${data[hoverIndex].plan.toLocaleString()}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                       <span className="text-slate-400 flex items-center gap-1"><span className={`w-2 h-2 rounded-full ${isOverBudget ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>Real</span> 
+                    <div className="flex justify-between items-center gap-2">
+                       <span className="text-slate-400">Real</span> 
                        <span className={`font-mono font-bold ${data[hoverIndex].real > data[hoverIndex].plan ? 'text-rose-400' : 'text-emerald-400'}`}>
                          ${data[hoverIndex].real.toLocaleString()}
                        </span>

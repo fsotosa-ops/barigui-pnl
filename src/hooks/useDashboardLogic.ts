@@ -18,7 +18,10 @@ export const useDashboardLogic = () => {
 
   // --- UI STATE ---
   const [activeView, setActiveView] = useState<'dash' | 'transactions' | 'settings' | 'roadmap'>('dash');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  
+  // MODIFICACIÓN RESPONSIVE: Iniciar cerrado por defecto para evitar parpadeos en móvil
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -47,13 +50,29 @@ export const useDashboardLogic = () => {
 
   const monthlyPlan = annualBudget / 12;
 
-  // --- CARGA INICIAL ---
+  // --- CARGA INICIAL Y RESPONSIVIDAD ---
   useEffect(() => {
+    // 1. Lógica Responsive: Abrir sidebar solo en escritorio
+    const handleResize = () => {
+      if (window.innerWidth >= 768) {
+        setSidebarOpen(true);
+      } else {
+        setSidebarOpen(false);
+      }
+    };
+    
+    // Ejecutar al montar
+    handleResize();
+    
+    // Escuchar cambios de tamaño
+    window.addEventListener('resize', handleResize);
+
+    // 2. Carga de Datos
     const initData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Perfil
+      // Perfil
       const { data: profile } = await supabase.from('profiles').select('*').single();
       if (profile) {
         setAnnualBudget(Number(profile.annual_budget));
@@ -63,7 +82,7 @@ export const useDashboardLogic = () => {
         await supabase.from('profiles').insert([{ id: user.id }]);
       }
 
-      // 2. Transacciones
+      // Transacciones
       const { data: txs } = await supabase.from('transactions').select('*').order('date', { ascending: false });
       if (txs) {
         setTransactions(txs.map(t => ({
@@ -73,7 +92,7 @@ export const useDashboardLogic = () => {
         })));
       }
 
-      // 3. Tareas
+      // Tareas
       const { data: tasksData } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
       if (tasksData) {
         setTasks(tasksData.map(t => ({
@@ -83,11 +102,12 @@ export const useDashboardLogic = () => {
       }
     };
     initData();
+
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   // --- 1. GUARDADO INTELIGENTE (API HÍBRIDA) ---
   const handleAddTransaction = async (txData: Partial<Transaction>): Promise<'created' | 'duplicate' | 'error'> => {
-    // Solo activamos loading global si es una entrada individual manual
     const isSingleEntry = !isUploading; 
     if (isSingleEntry) setIsUploading(true);
 
