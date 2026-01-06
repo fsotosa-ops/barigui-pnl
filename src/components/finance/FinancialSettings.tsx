@@ -1,6 +1,6 @@
 'use client';
-import { useState } from 'react';
-import { Wallet, DollarSign, Landmark, PiggyBank, HelpCircle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Wallet, Landmark, PiggyBank, HelpCircle, Target, ArrowDown, Coins, TrendingUp } from 'lucide-react';
 
 interface FinancialSettingsProps {
   annualBudget: number;
@@ -11,28 +11,22 @@ interface FinancialSettingsProps {
   setCurrentCash: (val: number) => void;
 }
 
-// Componente Interno de Ayuda mejorado para Mobile
 const InfoTooltip = ({ text }: { text: string }) => {
   const [isVisible, setIsVisible] = useState(false);
-
   return (
     <div 
       className="group relative ml-auto cursor-help focus:outline-none"
       onMouseEnter={() => setIsVisible(true)}
       onMouseLeave={() => setIsVisible(false)}
       onClick={() => setIsVisible(!isVisible)}
-      tabIndex={0} // Permite enfoque por teclado/toque
+      tabIndex={0}
     >
       <HelpCircle size={14} className={`transition-colors ${isVisible ? 'text-emerald-500' : 'text-slate-300'}`} />
-      
-      {/* Burbuja del Tooltip */}
       <div className={`
-        absolute bottom-full right-0 mb-2 w-56 p-3 bg-slate-900 text-white text-[10px] font-medium leading-relaxed rounded-2xl z-20 shadow-2xl border border-slate-700 transition-all duration-200
-        /* Lógica de visibilidad híbrida */
+        absolute bottom-full right-0 mb-2 w-60 p-4 bg-slate-900 text-white text-[10px] font-medium leading-relaxed rounded-2xl z-20 shadow-2xl border border-slate-700 transition-all duration-200
         ${isVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-2 scale-95 pointer-events-none'}
       `}>
         {text}
-        {/* Flecha indicadora */}
         <div className="absolute top-full right-1.5 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900"></div>
       </div>
     </div>
@@ -48,93 +42,189 @@ export const FinancialSettings = ({
   setCurrentCash
 }: FinancialSettingsProps) => {
   
-  const monthlyPlan = annualBudget / 12;
+  // Estado local para el Runway (Driver principal)
+  const [targetRunway, setTargetRunway] = useState<string>('');
+  const isEditingRunway = useRef(false);
+
+  // 1. SINCRONIZACIÓN INICIAL Y REACTIVA
+  // Si cambian los datos externos (carga inicial) y NO estamos editando, actualizamos el runway visual.
+  useEffect(() => {
+    if (!isEditingRunway.current && currentCash > 0 && annualBudget > 0) {
+        const monthlySpend = annualBudget / 12;
+        const calculatedRunway = (currentCash / monthlySpend).toFixed(1);
+        // Solo actualizamos si es diferente para evitar loops
+        if (calculatedRunway !== targetRunway) {
+            setTargetRunway(calculatedRunway);
+        }
+    }
+  }, [currentCash, annualBudget]);
+
+  // 2. MANEJO DEL CAMBIO DE RUNWAY (Cálculo Inverso)
+  const handleRunwayChange = (val: string) => {
+    setTargetRunway(val);
+    isEditingRunway.current = true; // Bloqueamos la sincronización inversa mientras escribes
+
+    const months = parseFloat(val);
+    if (months > 0 && currentCash > 0) {
+        // Fórmula: Si tengo $10,000 y quiero durar 10 meses -> Gasto = $1,000/mes
+        const allowedMonthlySpend = currentCash / months;
+        setAnnualBudget(Math.round(allowedMonthlySpend * 12));
+    }
+    
+    // Liberamos el bloqueo después de un momento (UX)
+    setTimeout(() => { isEditingRunway.current = false; }, 1000);
+  };
+
+  // 3. MANEJO DE CAMBIO DE CAJA (Recalcula Presupuesto manteniendo Runway)
+  const handleCashChange = (val: number) => {
+    setCurrentCash(val);
+    const months = parseFloat(targetRunway);
+    if (months > 0 && val > 0) {
+        const allowedMonthlySpend = val / months;
+        setAnnualBudget(Math.round(allowedMonthlySpend * 12));
+    }
+  };
+
+  // Variables derivadas para visualización
+  const monthlyBudget = annualBudget / 12;
+  const projectedSavings = monthlyIncome > 0 ? Math.round(((monthlyIncome - monthlyBudget) / monthlyIncome) * 100) : 0;
+  const isHealthySavings = projectedSavings >= 20;
 
   return (
     <div className="bg-white p-6 md:p-10 rounded-[2.5rem] border border-slate-100 max-w-5xl mx-auto mt-4 md:mt-8 shadow-sm">
-      <div className="text-center mb-10">
-        <div className="inline-flex p-4 bg-emerald-50 rounded-full mb-4 text-emerald-600 shadow-sm">
-          <Wallet size={40} />
+      
+      {/* HEADER */}
+      <div className="text-center mb-12">
+        <div className="inline-flex p-4 bg-emerald-50 rounded-full mb-4 text-emerald-600 shadow-sm border border-emerald-100">
+          <Target size={40} />
         </div>
-        <h3 className="text-2xl font-black text-slate-900 tracking-tight">Variables Financieras</h3>
-        <p className="text-slate-400 mt-2 text-sm font-medium italic md:not-italic">Ajusta los parámetros para recalcular tus proyecciones en tiempo real.</p>
+        <h3 className="text-2xl font-black text-slate-900 tracking-tight">Definición de Objetivos</h3>
+        <p className="text-slate-400 mt-2 text-sm font-medium">
+          Ajusta tu meta de tiempo y calcularemos tu límite de gasto automáticamente.
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
         
-        {/* 1. PRESUPUESTO ANUAL */}
-        <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 hover:border-slate-300 transition-colors group/card relative">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="p-1.5 bg-white rounded-lg text-slate-400 shadow-sm border border-slate-100">
-                <DollarSign size={14} />
+        {/* 1. CAJA TOTAL (RECURSO) */}
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-100 hover:border-blue-200 transition-all flex flex-col group relative">
+            <div className="flex items-center gap-2 mb-4">
+                <div className="p-1.5 bg-slate-50 rounded-lg text-blue-500">
+                    <Coins size={16} /> 
+                </div>
+                <label className="text-xs font-black text-slate-500 uppercase tracking-widest">Liquidez Total</label>
+                <InfoTooltip text="Dinero disponible HOY en bancos y efectivo. No incluye propiedades ni inversiones bloqueadas. Es tu 'tanque de combustible'." />
             </div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Presupuesto Anual</label>
-            <InfoTooltip text="Tu techo de gasto máximo para este año. Incluye tanto costos de vida personal como operativos del negocio." />
-          </div>
-          
-          <div className="flex items-center gap-2 bg-white p-3 rounded-2xl border border-slate-200 focus-within:ring-2 ring-emerald-500 transition-all shadow-sm">
-            <span className="text-slate-300 font-bold ml-2">$</span>
-            <input 
-              type="number" 
-              value={annualBudget}
-              onChange={(e) => setAnnualBudget(Number(e.target.value))}
-              className="w-full bg-transparent font-black text-2xl text-slate-800 outline-none text-center"
-            />
-          </div>
-          <p className="text-center text-[10px] font-bold text-slate-400 mt-3 bg-slate-100/50 py-1 px-3 rounded-full w-fit mx-auto">
-            Eq. mensual: <span className="text-slate-600">${monthlyPlan.toLocaleString('en-US', {maximumFractionDigits: 0})}</span>
-          </p>
+            <div className="flex-1 flex items-center">
+                <div className="flex items-center gap-2 w-full">
+                    <span className="text-2xl text-slate-300 font-black">$</span>
+                    <input 
+                        type="number" 
+                        value={currentCash || ''}
+                        onChange={(e) => handleCashChange(Number(e.target.value))}
+                        className="w-full bg-transparent font-black text-4xl text-slate-800 outline-none placeholder:text-slate-200"
+                        placeholder="0"
+                    />
+                </div>
+            </div>
+            <p className="text-[10px] font-bold text-slate-400 mt-3 bg-slate-50 py-1 px-3 rounded-full w-fit">
+                Fondos Disponibles
+            </p>
         </div>
 
-        {/* 2. INGRESO MENSUAL */}
-        <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 hover:border-slate-300 transition-colors group/card">
-          <div className="flex items-center gap-2 mb-4">
-             <div className="p-1.5 bg-white rounded-lg text-slate-400 shadow-sm border border-slate-100">
-                <Landmark size={14} />
-             </div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ingreso Mensual</label>
-            <InfoTooltip text="Promedio de dinero que entra a tu caja cada mes (Sueldo, Retiros, Ventas). Base para calcular tu capacidad de ahorro." />
-          </div>
-          
-          <div className="flex items-center gap-2 bg-white p-3 rounded-2xl border border-slate-200 focus-within:ring-2 ring-emerald-500 transition-all shadow-sm">
-            <span className="text-emerald-200 font-bold ml-2">$</span>
-            <input 
-              type="number" 
-              value={monthlyIncome}
-              onChange={(e) => setMonthlyIncome(Number(e.target.value))}
-              className="w-full bg-transparent font-black text-2xl text-emerald-600 outline-none text-center"
-            />
-          </div>
-           <p className="text-center text-[10px] font-bold text-slate-400 mt-3 bg-slate-100/50 py-1 px-3 rounded-full w-fit mx-auto">
-            Entradas Recurrentes
-          </p>
+        {/* 2. RUNWAY OBJETIVO (META - CONTROLADOR) */}
+        <div className="bg-slate-900 p-6 rounded-[2rem] border border-slate-800 text-white flex flex-col relative overflow-hidden shadow-xl ring-4 ring-slate-50">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500 rounded-full blur-[60px] opacity-10 pointer-events-none -mr-10 -mt-10"></div>
+            
+            <div className="flex items-center gap-2 mb-6 relative z-10">
+                <div className="p-1.5 bg-emerald-500/20 rounded-lg text-emerald-400 border border-emerald-500/30">
+                    <Target size={16} />
+                </div>
+                <label className="text-xs font-black text-emerald-400 uppercase tracking-widest">Meta de Vida</label>
+                <div className="ml-auto opacity-70 hover:opacity-100 transition-opacity">
+                    <HelpCircle size={14} className="text-slate-500"/>
+                </div>
+            </div>
+
+            <div className="flex-1 relative z-10">
+                <div className="flex items-baseline gap-2 mb-1">
+                    <input 
+                        type="number" 
+                        value={targetRunway}
+                        onChange={(e) => handleRunwayChange(e.target.value)}
+                        className="w-28 bg-transparent font-black text-5xl text-white outline-none border-b-2 border-white/20 focus:border-emerald-500 transition-colors pb-1 placeholder:text-white/20"
+                        placeholder="0"
+                        step="0.1"
+                    />
+                    <span className="text-xl font-bold text-slate-500">meses</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+                    ¿Cuánto tiempo quieres operar con tu liquidez actual sin depender de ventas?
+                </p>
+            </div>
         </div>
 
-        {/* 3. CAJA ACTUAL (Runway) */}
-        <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 hover:border-slate-300 transition-colors group/card">
-          <div className="flex items-center gap-2 mb-4">
-             <div className="p-1.5 bg-white rounded-lg text-slate-400 shadow-sm border border-slate-100">
-                <PiggyBank size={14} />
-             </div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Caja Total</label>
-            <InfoTooltip text="Liquidez total disponible HOY. Suma saldos de cuentas corrientes, efectivo y ahorros de libre disposición." />
-          </div>
-          
-          <div className="flex items-center gap-2 bg-white p-3 rounded-2xl border border-slate-200 focus-within:ring-2 ring-emerald-500 transition-all shadow-sm">
-            <span className="text-blue-200 font-bold ml-2">$</span>
-            <input 
-              type="number" 
-              value={currentCash}
-              onChange={(e) => setCurrentCash(Number(e.target.value))}
-              className="w-full bg-transparent font-black text-2xl text-blue-600 outline-none text-center"
-            />
-          </div>
-           <p className="text-center text-[10px] font-bold text-slate-400 mt-3 bg-slate-100/50 py-1 px-3 rounded-full w-fit mx-auto">
-            Patrimonio Líquido
-          </p>
+        {/* 3. RESULTADO (PRESUPUESTO PERMITIDO) */}
+        <div className="bg-emerald-50/50 p-6 rounded-[2rem] border border-emerald-100 flex flex-col relative group cursor-not-allowed">
+            <div className="flex items-center gap-2 mb-6">
+                <div className="p-1.5 bg-white rounded-lg text-emerald-600 shadow-sm">
+                    <ArrowDown size={16} />
+                </div>
+                <label className="text-xs font-black text-emerald-800 uppercase tracking-widest">Tope de Gasto</label>
+                <InfoTooltip text="Este es el límite máximo que puedes gastar al mes para cumplir tu meta de meses de vida." />
+            </div>
+
+            <div className="flex-1 flex flex-col justify-center">
+                <p className="text-[10px] font-bold text-emerald-600/70 uppercase mb-1">Presupuesto Mensual Calculado</p>
+                <div className="flex items-center gap-1 opacity-90">
+                    <span className="text-2xl text-emerald-300 font-black">$</span>
+                    <p className="text-4xl font-black text-emerald-700 tracking-tight">
+                        {monthlyBudget > 0 && isFinite(monthlyBudget) ? monthlyBudget.toLocaleString('en-US', {maximumFractionDigits: 0}) : '0'}
+                    </p>
+                </div>
+                <p className="text-[10px] font-medium text-emerald-600 mt-2 bg-white/60 py-1.5 px-3 rounded-xl w-fit">
+                    Resultado Automático
+                </p>
+            </div>
         </div>
 
       </div>
+
+      {/* FOOTER: PROYECCIÓN DE INGRESOS */}
+      <div className="border-t border-slate-100 pt-8 grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+         <div className="flex items-center gap-4">
+             <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 border border-slate-100">
+                <Landmark size={24} />
+             </div>
+             <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Ingreso Mensual (Base)</label>
+                <div className="flex items-center gap-1">
+                    <span className="text-sm font-bold text-slate-300">$</span>
+                    <input 
+                        type="number" 
+                        value={monthlyIncome || ''}
+                        onChange={(e) => setMonthlyIncome(Number(e.target.value))}
+                        className="bg-transparent font-bold text-xl text-slate-700 outline-none w-32 placeholder:text-slate-200"
+                        placeholder="0"
+                    />
+                </div>
+                <p className="text-[9px] text-slate-300 font-medium">Tus entradas promedio estimadas</p>
+             </div>
+         </div>
+
+         <div className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between border border-slate-100 shadow-sm">
+            <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <TrendingUp size={12}/> Capacidad de Ahorro
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Proyección según tope de gasto</p>
+            </div>
+            <p className={`text-3xl font-black ${isHealthySavings ? 'text-emerald-500' : 'text-orange-400'}`}>
+                {projectedSavings}%
+            </p>
+         </div>
+      </div>
+
     </div>
   );
 };
