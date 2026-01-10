@@ -18,21 +18,14 @@ export const TransactionTable = ({
   onSelectChange 
 }: TransactionTableProps) => {
   
-  // Lógica corregida para "Seleccionar Todo"
-  // Solo consideramos las transacciones visibles en la tabla actual para evitar desincronización con la paginación
   const areAllSelected = transactions.length > 0 && transactions.every(t => selectedIds.includes(t.id));
 
   const toggleAll = () => {
     if (!onSelectChange) return;
-
     if (areAllSelected) {
-      // Si todos los visibles están seleccionados, deseleccionamos solo esos
-      // (Mantenemos los que no están visibles si quisieras selección global, 
-      // pero para simplificar UX de borrado masivo, limpiamos estos IDs)
       const newSelected = selectedIds.filter(id => !transactions.find(t => t.id === id));
       onSelectChange(newSelected);
     } else {
-      // Agregar todos los IDs visibles que no estén ya seleccionados
       const idsToAdd = transactions.map(t => t.id).filter(id => !selectedIds.includes(id));
       onSelectChange([...selectedIds, ...idsToAdd]);
     }

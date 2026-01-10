@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo, useEffect } from 'react'; // Agregado useEffect
+import { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, Search, PieChart, List, BarChart3, TrendingUp, TrendingDown, Globe, Briefcase, User, Trash2, AlertTriangle 
 } from 'lucide-react';
@@ -18,13 +18,15 @@ interface TransactionManagerProps {
   selectedIds?: string[];
   setSelectedIds?: (ids: string[]) => void;
   onBulkDelete?: () => Promise<void>;
-  initialCurrency?: string; // Nueva prop para recibir la moneda del usuario
+  onUpdate?: (tx: any) => Promise<void>; // Nuevo: Para editar
+  initialCurrency?: string;
 }
 
 export const TransactionManager = ({ 
   transactions, 
   setTransactions, 
   onAdd, 
+  onUpdate,
   onDelete, 
   selectedIds = [], 
   setSelectedIds = () => {}, 
@@ -45,7 +47,6 @@ export const TransactionManager = ({
   const [localCurrency, setLocalCurrency] = useState(initialCurrency);
   const itemsPerPage = 25;
 
-  // Sincronizar moneda si cambia la prop
   useEffect(() => {
     if (initialCurrency) setLocalCurrency(initialCurrency);
   }, [initialCurrency]);
@@ -91,10 +92,20 @@ export const TransactionManager = ({
     });
   };
 
+  const handleSave = async (data: Partial<Transaction>) => {
+    if (editingItem && onUpdate) {
+      await onUpdate({ ...data, id: editingItem.id });
+    } else if (onAdd) {
+      await onAdd(data);
+    }
+    setEditingItem(null);
+    setIsModalOpen(false);
+  };
+
   return (
     <div className="flex flex-col gap-6 animate-in fade-in duration-500 pb-20">
       
-      {/* CORRECCIÓN 1: Layout Flexible (flex-wrap) y sin altura fija */}
+      {/* Header de Filtros y Selección */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 min-h-[3rem]">
         {selectedIds.length > 0 ? (
            <div className="flex items-center gap-4 bg-rose-50 px-4 py-2 rounded-2xl w-full md:w-auto animate-in slide-in-from-left-2 shadow-sm border border-rose-100">
@@ -128,8 +139,8 @@ export const TransactionManager = ({
         </div>
       </div>
 
+      {/* Badges de Resumen */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* ... (WIDGETS SIN CAMBIOS) ... */}
         <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4">
           <div className="p-3 bg-emerald-50 text-emerald-500 rounded-2xl"><TrendingUp size={24}/></div>
           <div>
@@ -152,10 +163,9 @@ export const TransactionManager = ({
           </div>
         </div>
       </div>
-      
-      {/* ... (RESTO DEL COMPONENTE: LIST, TABLE, MODAL) ... */}
+
       <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm p-8 min-h-[600px] flex flex-col">
-        {/* ... Controles de Tabla ... */}
+        {/* Controles de Tabla */}
         <div className="flex justify-between items-center mb-8">
             <div className="flex bg-slate-100 p-1 rounded-2xl">
                 <button onClick={() => setViewMode('list')} className={`px-6 py-2.5 rounded-xl text-xs font-bold transition-all ${viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}><List size={16}/> Listado</button>
@@ -192,7 +202,7 @@ export const TransactionManager = ({
         )}
       </div>
 
-      <TransactionForm isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={onAdd!} initialData={editingItem} />
+      <TransactionForm isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={handleSave} initialData={editingItem} />
       
       <ConfirmationModal 
         isOpen={isDeleteModalOpen}

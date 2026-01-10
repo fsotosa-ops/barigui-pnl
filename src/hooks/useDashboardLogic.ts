@@ -1,5 +1,4 @@
 'use client';
-
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Transaction, Task } from '@/types/finance';
@@ -24,10 +23,7 @@ export const useDashboardLogic = () => {
   
   // FILTERS DASHBOARD
   const [metricMode, setMetricMode] = useState<'annual' | 'rolling'>('rolling');
-  
-  // CORRECCIÓN 2 y 3: Moneda inicial 'USD' pero se sobreescribe al cargar perfil
   const [displayCurrency, setDisplayCurrency] = useState<string>('USD'); 
-  
   const [periodFilter, setPeriodFilter] = useState<'Mensual' | 'Trimestral' | 'Anual'>('Anual');
   const [scenario, setScenario] = useState<'base' | 'worst' | 'best'>('base');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -44,8 +40,14 @@ export const useDashboardLogic = () => {
     isOpen: boolean; type: NotificationType; title: string; details: string[];
   }>({ isOpen: false, type: 'success', title: '', details: [] });
 
+  // --- CARGA DE DATOS (FILTRANDO ELIMINADOS) ---
   const refreshTransactions = async () => {
-    const { data } = await supabase.from('transactions').select('*').order('date', { ascending: false });
+    const { data } = await supabase
+      .from('transactions')
+      .select('*')
+      .is('deleted_at', null) // Solo traer los NO borrados
+      .order('date', { ascending: false });
+      
     if (data) {
       setTransactions(data.map(t => ({
         id: t.id, date: t.date, description: t.description, category: t.category,
@@ -67,10 +69,8 @@ export const useDashboardLogic = () => {
       setMonthlyIncome(Number(prof.monthly_income));
       setCurrentCash(Number(prof.current_cash));
       
-      // Sincronización Automática de Moneda
-      if (prof.base_currency) {
-        setDisplayCurrency(prof.base_currency);
-      }
+      // Sincronizar moneda base si existe
+      if (prof.base_currency) setDisplayCurrency(prof.base_currency);
     }
     
     await refreshTransactions();
@@ -81,18 +81,31 @@ export const useDashboardLogic = () => {
 
   useEffect(() => { loadInitialData(); }, []);
 
+  // --- SOFT DELETE (Acciones Masivas) ---
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
-    const { error } = await supabase.from('transactions').delete().in('id', selectedIds);
+    
+    const { error } = await supabase
+      .from('transactions')
+      .update({ deleted_at: new Date().toISOString() })
+      .in('id', selectedIds);
+
     if (!error) {
       setTransactions(prev => prev.filter(t => !selectedIds.includes(t.id)));
       setSelectedIds([]);
-      setNotification({ isOpen: true, type: 'success', title: 'Eliminado', details: [`${selectedIds.length} registros borrados.`] });
+      setNotification({ isOpen: true, type: 'success', title: 'Archivado', details: [`${selectedIds.length} registros movidos a papelera.`] });
+    } else {
+        console.error(error);
+        setNotification({ isOpen: true, type: 'error', title: 'Error', details: ['No se pudieron eliminar los registros.'] });
     }
   };
 
   const handleDeleteTransaction = async (id: string) => {
-    const { error } = await supabase.from('transactions').delete().eq('id', id);
+    const { error } = await supabase
+      .from('transactions')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+
     if (!error) setTransactions(prev => prev.filter(t => t.id !== id));
   };
 
@@ -104,6 +117,24 @@ export const useDashboardLogic = () => {
     });
     await refreshTransactions();
     return 'created';
+  };
+
+  const handleUpdateTransaction = async (txData: Partial<Transaction>) => {
+    const usdVal = txData.amountUSD || (txData.originalAmount && txData.originalCurrency ? convertToUSD(txData.originalAmount, txData.originalCurrency) : 0);
+
+    const response = await fetch('/api/transactions/update', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...txData, amount: usdVal })
+    });
+
+    const res = await response.json();
+    if (res.success) {
+      await refreshTransactions();
+      setNotification({ isOpen: true, type: 'success', title: 'Actualizado', details: ['La transacción se corrigió correctamente.'] });
+    } else {
+      setNotification({ isOpen: true, type: 'error', title: 'Error', details: ['No se pudo actualizar el registro.'] });
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -171,8 +202,6 @@ export const useDashboardLogic = () => {
     
     let incomeUSD = monthlyIncome;
     let cashUSD = currentCash;
-    
-    // Si los datos del perfil NO están en USD, convertirlos a USD para el cálculo interno
     if (profile?.base_currency && profile.base_currency !== 'USD') {
         incomeUSD = convertToUSD(monthlyIncome, profile.base_currency);
         cashUSD = convertToUSD(currentCash, profile.base_currency);
@@ -182,24 +211,18 @@ export const useDashboardLogic = () => {
     const savingsRate = incomeUSD > 0 ? Math.round(((incomeUSD - avgExpense) / incomeUSD) * 100) : 0;
     const runway = avgExpense > 0 ? parseFloat((cashUSD / avgExpense).toFixed(1)) : 0;
 
-    // AHORA: Convertir los resultados (que están en USD) a la moneda de visualización (displayCurrency)
     let displayVariance = varianceUSD;
     if (displayCurrency !== 'USD' && rates[displayCurrency]) {
        displayVariance = varianceUSD * rates[displayCurrency];
     }
 
-    return { 
-      variance: displayVariance, 
-      runway, 
-      savingsRate, 
-      currency: displayCurrency 
-    };
+    return { variance: displayVariance, runway, savingsRate, currency: displayCurrency };
   }, [metricMode, transactions, selectedYear, monthlyIncome, currentCash, profile, displayCurrency, rates, convertToUSD]);
 
   return {
     sidebarOpen, setSidebarOpen, activeView, setActiveView, isEntryOpen, setIsEntryOpen, isUploading, fileInputRef,
     transactions, setTransactions, selectedIds, setSelectedIds,
-    handleDeleteTransaction, handleBulkDelete, handleAddTransaction, handleFileUpload,
+    handleDeleteTransaction, handleBulkDelete, handleAddTransaction, handleUpdateTransaction, handleFileUpload,
     metricMode, setMetricMode, displayCurrency, setDisplayCurrency,
     tasks, handleAddTask: () => {}, handleToggleTask: () => {}, handleDeleteTask: () => {},
     periodFilter, setPeriodFilter, scenario, setScenario, selectedYear, setSelectedYear, availableYears: [2025, 2026],
