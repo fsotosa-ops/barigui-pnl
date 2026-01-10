@@ -1,32 +1,25 @@
 'use client';
 
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Transaction, Task } from '@/types/finance';
 import { NotificationType } from '@/components/ui/ProcessNotification';
 import { useExchangeRates } from '@/hooks/useExchangeRates';
 
-const generateFileHash = (file: File) => {
-  return `${file.name}_${file.size}_${file.lastModified}`;
-};
-
 export const useDashboardLogic = () => {
-  const router = useRouter();
   const supabase = createClient();
   const { rates, convertToUSD } = useExchangeRates(); 
 
-  // --- UI STATE ---
+  // --- ESTADOS DE UI ---
   const [activeView, setActiveView] = useState<'dash' | 'transactions' | 'settings' | 'roadmap'>('dash');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [metricMode, setMetricMode] = useState<'annual' | 'rolling'>('rolling');
   const [displayCurrency, setDisplayCurrency] = useState<string>('USD'); 
-  
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- NOTIFICATION STATE ---
+  // --- NOTIFICACIONES ---
   const [notification, setNotification] = useState<{
     isOpen: boolean;
     type: NotificationType;
@@ -34,28 +27,29 @@ export const useDashboardLogic = () => {
     details: string[];
   }>({ isOpen: false, type: 'success', title: '', details: [] });
 
-  // --- DATA STATE ---
+  // --- DATOS PRINCIPALES ---
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   
-  // --- FILTERS ---
+  // --- FILTROS DEL DASHBOARD (Restaurados) ---
   const [periodFilter, setPeriodFilter] = useState<'Mensual' | 'Trimestral' | 'Anual'>('Anual');
   const [scenario, setScenario] = useState<'base' | 'worst' | 'best'>('base');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   
-  // --- PROFILE ---
+  // --- PERFIL FINANCIERO ---
   const [annualBudget, setAnnualBudget] = useState(0); 
   const [monthlyIncome, setMonthlyIncome] = useState(0); 
   const [currentCash, setCurrentCash] = useState(0);    
 
   const monthlyPlan = annualBudget / 12;
 
-  // --- REFRESH DATA ---
+  // --- CARGA DE DATOS ---
   const refreshTransactions = async () => {
     const { data: txs } = await supabase.from('transactions').select('*').order('date', { ascending: false });
     if (txs) {
       setTransactions(txs.map(t => ({
-        id: t.id, date: t.date, description: t.description, category: t.category, type: t.type,
+        id: t.id, date: t.date, description: t.description, category: t.category, 
+        type: t.type, scope: t.scope, // Incluimos el nuevo campo scope
         originalAmount: Number(t.original_amount), originalCurrency: t.original_currency,
         exchangeRate: Number(t.exchange_rate), amountUSD: Number(t.amount_usd)
       })));
@@ -85,16 +79,10 @@ export const useDashboardLogic = () => {
   };
 
   useEffect(() => {
-    const handleResize = () => {
-      setSidebarOpen(window.innerWidth >= 768);
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
     loadInitialData();
-    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // --- CRUD HANDLERS ---
+  // --- MANEJADORES CRUD ---
   const handleAddTransaction = async (txData: Partial<Transaction>): Promise<'created' | 'duplicate' | 'error'> => {
     try {
       const response = await fetch('/api/transactions/create', {
@@ -107,14 +95,14 @@ export const useDashboardLogic = () => {
            currency: txData.originalCurrency,
            category: txData.category,
            date: txData.date,
-           type: txData.type
+           type: txData.type,
+           scope: txData.scope || 'personal'
         })
       });
 
       const result = await response.json();
       if (result.success) {
         if (result.duplicate) return 'duplicate';
-        // Solo refrescamos el estado si no estamos en medio de una subida masiva
         if (!isUploading) await refreshTransactions();
         return 'created';
       }
@@ -149,7 +137,6 @@ export const useDashboardLogic = () => {
       for (const tx of parsedTxs) {
         const currency = tx.currency || 'CLP';
         const rawAmount = tx.amount || 0;
-        // CONVERSIÓN REAL: Usamos la tasa del hook antes de enviar a la API
         const usdValue = convertToUSD(rawAmount, currency);
 
         const status = await handleAddTransaction({
@@ -159,14 +146,14 @@ export const useDashboardLogic = () => {
            originalCurrency: currency, 
            category: tx.category,
            date: tx.date,
-           type: tx.type
+           type: tx.type,
+           scope: tx.scope || 'personal'
         });
 
         if (status === 'created') createdCount++;
         else if (status === 'duplicate') duplicateCount++;
       }
       
-      // Una sola actualización de estado al final para evitar duplicados visuales
       await refreshTransactions();
 
       setNotification({ 
@@ -184,7 +171,7 @@ export const useDashboardLogic = () => {
     }
   };
 
-  // --- TAREAS ---
+  // --- GESTIÓN DE TAREAS ---
   const handleAddTask = async (taskData: any) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -202,7 +189,7 @@ export const useDashboardLogic = () => {
     setTasks(prev => prev.filter(t => t.id !== id));
   };
 
-  // --- PERFIL ---
+  // --- ACTUALIZACIÓN DE PERFIL ---
   const updateProfile = async (field: string, value: number) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -217,6 +204,7 @@ export const useDashboardLogic = () => {
 
   const availableYears = useMemo(() => [2025, 2026], []);
   
+  // --- CÁLCULO DE KPIs ---
   const kpiData = useMemo(() => {
     const now = new Date();
     const isRolling = metricMode === 'rolling';
@@ -250,6 +238,7 @@ export const useDashboardLogic = () => {
     };
   }, [metricMode, displayCurrency, transactions, selectedYear, monthlyIncome, currentCash, rates]);
 
+  // --- RETORNO COMPLETO PARA EL DASHBOARD ---
   return {
     sidebarOpen, setSidebarOpen, activeView, setActiveView, isEntryOpen, setIsEntryOpen, isUploading, fileInputRef,
     transactions, setTransactions, metricMode, setMetricMode, displayCurrency, setDisplayCurrency,

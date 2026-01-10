@@ -4,6 +4,7 @@ export interface Transaction {
   description: string;
   category: string;
   type: 'income' | 'expense';
+  scope: 'business' | 'personal';
   originalAmount: number;
   originalCurrency: string;
   exchangeRate: number;
