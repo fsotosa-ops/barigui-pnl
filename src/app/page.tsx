@@ -10,7 +10,6 @@ import { TimelineFilter } from '@/components/dashboard/TimelineFilter';
 import { CurrencyTicker } from '@/components/dashboard/CurrencyTicker';
 import { CurrencySettings } from '@/components/finance/CurrencySettings';
 
-
 // Functional Components
 import { RoadmapList } from '@/components/goals/RoadmapList'; 
 import { QuickEntry } from '@/components/finance/QuickEntry';
@@ -258,15 +257,16 @@ export default function OperationalDash() {
               setTransactions={logic.setTransactions}
               onAdd={logic.handleAddTransaction}
               onDelete={logic.handleDeleteTransaction}
+              // PROPS DE SELECCIÓN MASIVA CONECTADOS
+              selectedIds={logic.selectedIds}
+              setSelectedIds={logic.setSelectedIds}
+              onBulkDelete={logic.handleBulkDelete}
             />
           )}
 
           {logic.activeView === 'settings' && (
             <div className="space-y-6">
-            {/* Configuración de Moneda Base */}
             <CurrencySettings onUpdate={logic.loadInitialData} />
-            
-            {/* Configuración Financiera */}
             <FinancialSettings 
               annualBudget={logic.annualBudget} 
               setAnnualBudget={logic.setAnnualBudget}
@@ -280,7 +280,6 @@ export default function OperationalDash() {
         </div>
       </main>
 
-      {/* ELEMENTOS FLOTANTES */}
       <button 
         onClick={() => logic.setIsEntryOpen(true)} 
         className="fixed bottom-8 right-6 md:bottom-10 md:right-10 bg-slate-900 text-white w-14 h-14 md:w-16 md:h-16 rounded-[1.5rem] shadow-2xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-40 border-[4px] md:border-[6px] border-white group"

@@ -6,6 +6,7 @@ import {
 import { Transaction } from '@/types/finance';
 import { TransactionTable } from './TransactionTable';
 import { TransactionForm } from './TransactionForm';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal'; // <-- IMPORTAR MODAL
 import { useExchangeRates } from '@/hooks/useExchangeRates';
 import { CATEGORIES } from '@/lib/constants/finance';
 
@@ -32,7 +33,9 @@ export const TransactionManager = ({
   const [viewMode, setViewMode] = useState<'list' | 'analysis'>('list');
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false); // Estado para el modal de borrado
   const [editingItem, setEditingItem] = useState<Transaction | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   
@@ -55,7 +58,6 @@ export const TransactionManager = ({
     const categories: Record<string, any> = {};
 
     filteredTxs.forEach((t) => {
-      // Sumamos estrictamente la columna USD de la base de datos
       const val = Number(t.amountUSD) || 0;
       if (t.type === 'income') totalIncomeUSD += val;
       else totalExpenseUSD += val;
@@ -72,8 +74,6 @@ export const TransactionManager = ({
   const formatMoney = (valUSD: number) => {
     const rate = rates[localCurrency] || 1;
     const convertedValue = valUSD * rate;
-    
-    // Si es CLP, COP o MXN quitamos decimales para limpieza visual
     const noDecimals = ['CLP', 'COP', 'MXN', 'JPY'].includes(localCurrency);
     
     return convertedValue.toLocaleString('en-US', { 
@@ -90,10 +90,10 @@ export const TransactionManager = ({
       {/* Header de Filtros y Selección */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 h-12">
         {selectedIds.length > 0 ? (
-           <div className="flex items-center gap-4 bg-rose-50 px-4 py-2 rounded-2xl w-full md:w-auto animate-in slide-in-from-left-2">
+           <div className="flex items-center gap-4 bg-rose-50 px-4 py-2 rounded-2xl w-full md:w-auto animate-in slide-in-from-left-2 shadow-sm border border-rose-100">
              <span className="text-rose-600 font-bold text-xs flex items-center gap-2"><AlertTriangle size={14}/> {selectedIds.length} seleccionados</span>
-             <button onClick={onBulkDelete} className="text-xs font-black text-white bg-rose-500 px-3 py-1.5 rounded-lg hover:bg-rose-600 flex items-center gap-1"><Trash2 size={12}/> Eliminar</button>
-             <button onClick={() => setSelectedIds([])} className="text-xs text-slate-400 hover:text-slate-600">Cancelar</button>
+             <button onClick={() => setIsDeleteModalOpen(true)} className="text-xs font-black text-white bg-rose-500 px-3 py-1.5 rounded-lg hover:bg-rose-600 flex items-center gap-1 shadow-md shadow-rose-200 transition-all active:scale-95"><Trash2 size={12}/> Eliminar</button>
+             <button onClick={() => setSelectedIds([])} className="text-xs text-slate-400 hover:text-slate-600 font-medium">Cancelar</button>
            </div>
         ) : (
           <div className="flex bg-slate-200/50 p-1 rounded-2xl border border-slate-200 w-full md:w-auto">
@@ -105,7 +105,7 @@ export const TransactionManager = ({
                <button
                  key={s.id}
                  onClick={() => { setActiveScope(s.id as any); setCurrentPage(1); }}
-                 className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeScope === s.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
+                 className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeScope === s.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                >
                  {s.icon} {s.label}
                </button>
@@ -113,7 +113,7 @@ export const TransactionManager = ({
           </div>
         )}
 
-        <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
             <span className="text-[9px] font-bold text-slate-400 ml-2 uppercase tracking-wider">Moneda Vista:</span>
             <select value={localCurrency} onChange={(e) => setLocalCurrency(e.target.value)} className="text-xs font-black outline-none pr-2 py-1 cursor-pointer bg-transparent">
               {['USD', 'CLP', 'BRL', 'EUR', 'COP', 'MXN'].map(c => <option key={c} value={c}>{c}</option>)}
@@ -185,6 +185,17 @@ export const TransactionManager = ({
       </div>
 
       <TransactionForm isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={onAdd!} initialData={editingItem} />
+      
+      {/* MODAL DE CONFIRMACIÓN */}
+      <ConfirmationModal 
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={onBulkDelete}
+        title="¿Eliminar transacciones?"
+        description={`Estás a punto de borrar ${selectedIds.length} registros permanentemente. Esta acción no se puede deshacer.`}
+        confirmText="Sí, borrar todo"
+        isDangerous={true}
+      />
     </div>
   );
 };
