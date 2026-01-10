@@ -30,6 +30,7 @@ export const useDashboardLogic = () => {
   // --- DATOS PRINCIPALES ---
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [profile, setProfile] = useState<any>(null); // NUEVO: Estado para el perfil completo
   
   // --- FILTROS DEL DASHBOARD (Restaurados) ---
   const [periodFilter, setPeriodFilter] = useState<'Mensual' | 'Trimestral' | 'Anual'>('Anual');
@@ -49,7 +50,7 @@ export const useDashboardLogic = () => {
     if (txs) {
       setTransactions(txs.map(t => ({
         id: t.id, date: t.date, description: t.description, category: t.category, 
-        type: t.type, scope: t.scope, // Incluimos el nuevo campo scope
+        type: t.type, scope: t.scope,
         originalAmount: Number(t.original_amount), originalCurrency: t.original_currency,
         exchangeRate: Number(t.exchange_rate), amountUSD: Number(t.amount_usd)
       })));
@@ -60,11 +61,12 @@ export const useDashboardLogic = () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: profile } = await supabase.from('profiles').select('*').single();
-    if (profile) {
-      setAnnualBudget(Number(profile.annual_budget));
-      setMonthlyIncome(Number(profile.monthly_income));
-      setCurrentCash(Number(profile.current_cash));
+    const { data: profileData } = await supabase.from('profiles').select('*').single();
+    if (profileData) {
+      setProfile(profileData); // GUARDAR EL PERFIL COMPLETO
+      setAnnualBudget(Number(profileData.annual_budget));
+      setMonthlyIncome(Number(profileData.monthly_income));
+      setCurrentCash(Number(profileData.current_cash));
     }
 
     await refreshTransactions();
@@ -194,7 +196,13 @@ export const useDashboardLogic = () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const dbField = field === 'annualBudget' ? 'annual_budget' : field === 'monthlyIncome' ? 'monthly_income' : 'current_cash';
-    await supabase.from('profiles').update({ [dbField]: value }).eq('id', user.id);
+    
+    const { error } = await supabase.from('profiles').update({ [dbField]: value }).eq('id', user.id);
+    
+    if (!error) {
+      // Actualizar el profile local también
+      setProfile((prev: any) => prev ? { ...prev, [dbField]: value } : null);
+    }
   };
 
   const handleLogout = async () => {
@@ -204,7 +212,7 @@ export const useDashboardLogic = () => {
 
   const availableYears = useMemo(() => [2025, 2026], []);
   
-  // --- CÁLCULO DE KPIs ---
+  // --- CÁLCULO DE KPIs CON SOPORTE DE MONEDA BASE ---
   const kpiData = useMemo(() => {
     const now = new Date();
     const isRolling = metricMode === 'rolling';
@@ -224,19 +232,37 @@ export const useDashboardLogic = () => {
     const totalExpenseUSD = relevantTxs.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amountUSD, 0);
     const avgMonthlyExpenseUSD = totalExpenseUSD / (divisor || 1);
     
-    const varianceUSD = monthlyIncome - avgMonthlyExpenseUSD;
-    const savingsRate = monthlyIncome > 0 ? Math.round(((monthlyIncome - avgMonthlyExpenseUSD) / monthlyIncome) * 100) : 0;
-    const runway = avgMonthlyExpenseUSD > 0 ? parseFloat((currentCash / avgMonthlyExpenseUSD).toFixed(1)) : 0;
+    // Obtener moneda base del perfil (por defecto CLP)
+    const baseCurrency = profile?.base_currency || 'CLP';
+    
+    // Convertir valores del perfil a USD si no están ya en USD
+    let monthlyIncomeUSD = monthlyIncome;
+    let currentCashUSD = currentCash;
+    
+    if (baseCurrency !== 'USD' && rates[baseCurrency]) {
+      monthlyIncomeUSD = convertToUSD(monthlyIncome, baseCurrency);
+      currentCashUSD = convertToUSD(currentCash, baseCurrency);
+    }
+    
+    const varianceUSD = monthlyIncomeUSD - avgMonthlyExpenseUSD;
+    const savingsRate = monthlyIncomeUSD > 0 ? Math.round(((monthlyIncomeUSD - avgMonthlyExpenseUSD) / monthlyIncomeUSD) * 100) : 0;
+    const runway = avgMonthlyExpenseUSD > 0 ? parseFloat((currentCashUSD / avgMonthlyExpenseUSD).toFixed(1)) : 0;
 
-    const rate = rates[displayCurrency] || 1;
+    // Para mostrar en la moneda seleccionada
+    let displayValue = varianceUSD;
+    if (displayCurrency !== 'USD' && rates[displayCurrency]) {
+      displayValue = varianceUSD * rates[displayCurrency];
+    }
 
     return { 
-      variance: varianceUSD * rate, 
+      variance: displayValue, 
       runway, 
       savingsRate, 
-      currency: displayCurrency 
+      currency: displayCurrency,
+      varianceUSD, // Valor en USD para referencia
+      baseCurrency // Moneda base del usuario
     };
-  }, [metricMode, displayCurrency, transactions, selectedYear, monthlyIncome, currentCash, rates]);
+  }, [metricMode, displayCurrency, transactions, selectedYear, monthlyIncome, currentCash, rates, convertToUSD, profile]);
 
   // --- RETORNO COMPLETO PARA EL DASHBOARD ---
   return {
@@ -249,6 +275,8 @@ export const useDashboardLogic = () => {
     monthlyIncome, setMonthlyIncome: (v: number) => { setMonthlyIncome(v); updateProfile('monthlyIncome', v); },
     currentCash, setCurrentCash: (v: number) => { setCurrentCash(v); updateProfile('currentCash', v); },
     monthlyPlan, projectedData: [], kpiData, handleLogout,
+    profile, // EXPORTAR EL PROFILE
+    loadInitialData, // EXPORTAR PARA RECARGAR DESPUÉS DE CAMBIAR MONEDA
     notification, closeNotification: () => setNotification(prev => ({ ...prev, isOpen: false }))
   };
 };

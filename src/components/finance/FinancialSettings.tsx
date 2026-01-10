@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { Wallet, Landmark, PiggyBank, HelpCircle, Target, ArrowDown, Coins, TrendingUp } from 'lucide-react';
+import { useExchangeRates } from '@/hooks/useExchangeRates';
+import { createClient } from '@/lib/supabase/client';
 
 interface FinancialSettingsProps {
   annualBudget: number;
@@ -42,17 +44,33 @@ export const FinancialSettings = ({
   setCurrentCash
 }: FinancialSettingsProps) => {
   
+  const { rates, convertToUSD } = useExchangeRates();
+  const [baseCurrency, setBaseCurrency] = useState('CLP');
+  const supabase = createClient();
+  
   // Estado local para el Runway (Driver principal)
   const [targetRunway, setTargetRunway] = useState<string>('');
   const isEditingRunway = useRef(false);
 
+  // Cargar la moneda base del usuario
+  useEffect(() => {
+    const loadBaseCurrency = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { data: profile } = await supabase.from('profiles').select('base_currency').single();
+      if (profile?.base_currency) {
+        setBaseCurrency(profile.base_currency);
+      }
+    };
+    loadBaseCurrency();
+  }, []);
+
   // 1. SINCRONIZACIÓN INICIAL Y REACTIVA
-  // Si cambian los datos externos (carga inicial) y NO estamos editando, actualizamos el runway visual.
   useEffect(() => {
     if (!isEditingRunway.current && currentCash > 0 && annualBudget > 0) {
         const monthlySpend = annualBudget / 12;
         const calculatedRunway = (currentCash / monthlySpend).toFixed(1);
-        // Solo actualizamos si es diferente para evitar loops
         if (calculatedRunway !== targetRunway) {
             setTargetRunway(calculatedRunway);
         }
@@ -62,16 +80,14 @@ export const FinancialSettings = ({
   // 2. MANEJO DEL CAMBIO DE RUNWAY (Cálculo Inverso)
   const handleRunwayChange = (val: string) => {
     setTargetRunway(val);
-    isEditingRunway.current = true; // Bloqueamos la sincronización inversa mientras escribes
+    isEditingRunway.current = true;
 
     const months = parseFloat(val);
     if (months > 0 && currentCash > 0) {
-        // Fórmula: Si tengo $10,000 y quiero durar 10 meses -> Gasto = $1,000/mes
         const allowedMonthlySpend = currentCash / months;
         setAnnualBudget(Math.round(allowedMonthlySpend * 12));
     }
     
-    // Liberamos el bloqueo después de un momento (UX)
     setTimeout(() => { isEditingRunway.current = false; }, 1000);
   };
 
@@ -87,7 +103,13 @@ export const FinancialSettings = ({
 
   // Variables derivadas para visualización
   const monthlyBudget = annualBudget / 12;
-  const projectedSavings = monthlyIncome > 0 ? Math.round(((monthlyIncome - monthlyBudget) / monthlyIncome) * 100) : 0;
+  const monthlyBudgetUSD = baseCurrency === 'USD' ? monthlyBudget : convertToUSD(monthlyBudget, baseCurrency);
+  const monthlyBudgetDisplay = monthlyBudget;
+  
+  const monthlyIncomeDisplay = monthlyIncome;
+  const monthlyIncomeUSD = baseCurrency === 'USD' ? monthlyIncome : convertToUSD(monthlyIncome, baseCurrency);
+  
+  const projectedSavings = monthlyIncomeDisplay > 0 ? Math.round(((monthlyIncomeDisplay - monthlyBudgetDisplay) / monthlyIncomeDisplay) * 100) : 0;
   const isHealthySavings = projectedSavings >= 20;
 
   return (
@@ -117,7 +139,9 @@ export const FinancialSettings = ({
             </div>
             <div className="flex-1 flex items-center">
                 <div className="flex items-center gap-2 w-full">
-                    <span className="text-2xl text-slate-300 font-black">$</span>
+                    <span className="text-2xl text-slate-300 font-black">
+                        {baseCurrency === 'USD' ? '$' : ''}
+                    </span>
                     <input 
                         type="number" 
                         value={currentCash || ''}
@@ -125,8 +149,16 @@ export const FinancialSettings = ({
                         className="w-full bg-transparent font-black text-4xl text-slate-800 outline-none placeholder:text-slate-200"
                         placeholder="0"
                     />
+                    <span className="text-2xl font-black text-slate-500">
+                        {baseCurrency}
+                    </span>
                 </div>
             </div>
+            {baseCurrency !== 'USD' && currentCash > 0 && (
+                <p className="text-[10px] text-slate-400 mt-2 bg-slate-50 py-1 px-3 rounded-full w-fit">
+                    ≈ ${convertToUSD(currentCash, baseCurrency).toLocaleString('en-US', {maximumFractionDigits: 0})} USD
+                </p>
+            )}
             <p className="text-[10px] font-bold text-slate-400 mt-3 bg-slate-50 py-1 px-3 rounded-full w-fit">
                 Fondos Disponibles
             </p>
@@ -175,13 +207,29 @@ export const FinancialSettings = ({
             </div>
 
             <div className="flex-1 flex flex-col justify-center">
-                <p className="text-[10px] font-bold text-emerald-600/70 uppercase mb-1">Presupuesto Mensual Calculado</p>
+                <p className="text-[10px] font-bold text-emerald-600/70 uppercase mb-1">
+                    Presupuesto Mensual Calculado
+                </p>
                 <div className="flex items-center gap-1 opacity-90">
-                    <span className="text-2xl text-emerald-300 font-black">$</span>
+                    <span className="text-2xl text-emerald-300 font-black">
+                        {baseCurrency === 'USD' ? '$' : ''}
+                    </span>
                     <p className="text-4xl font-black text-emerald-700 tracking-tight">
-                        {monthlyBudget > 0 && isFinite(monthlyBudget) ? monthlyBudget.toLocaleString('en-US', {maximumFractionDigits: 0}) : '0'}
+                        {monthlyBudgetDisplay > 0 && isFinite(monthlyBudgetDisplay) 
+                            ? monthlyBudgetDisplay.toLocaleString('en-US', {maximumFractionDigits: 0}) 
+                            : '0'}
                     </p>
+                    <span className="text-xl font-bold text-emerald-600">
+                        {baseCurrency}
+                    </span>
                 </div>
+                
+                {baseCurrency !== 'USD' && monthlyBudgetDisplay > 0 && (
+                    <p className="text-[10px] text-emerald-600 mt-2 bg-white/60 py-1.5 px-3 rounded-xl w-fit">
+                        ≈ ${monthlyBudgetUSD.toLocaleString('en-US', {maximumFractionDigits: 0})} USD
+                    </p>
+                )}
+                
                 <p className="text-[10px] font-medium text-emerald-600 mt-2 bg-white/60 py-1.5 px-3 rounded-xl w-fit">
                     Resultado Automático
                 </p>
@@ -199,7 +247,9 @@ export const FinancialSettings = ({
              <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Ingreso Mensual (Base)</label>
                 <div className="flex items-center gap-1">
-                    <span className="text-sm font-bold text-slate-300">$</span>
+                    <span className="text-sm font-bold text-slate-300">
+                        {baseCurrency === 'USD' ? '$' : ''}
+                    </span>
                     <input 
                         type="number" 
                         value={monthlyIncome || ''}
@@ -207,7 +257,15 @@ export const FinancialSettings = ({
                         className="bg-transparent font-bold text-xl text-slate-700 outline-none w-32 placeholder:text-slate-200"
                         placeholder="0"
                     />
+                    <span className="text-lg font-bold text-slate-500">
+                        {baseCurrency}
+                    </span>
                 </div>
+                {baseCurrency !== 'USD' && monthlyIncome > 0 && (
+                    <p className="text-[9px] text-slate-400 font-medium">
+                        ≈ ${monthlyIncomeUSD.toLocaleString('en-US', {maximumFractionDigits: 0})} USD
+                    </p>
+                )}
                 <p className="text-[9px] text-slate-300 font-medium">Tus entradas promedio estimadas</p>
              </div>
          </div>

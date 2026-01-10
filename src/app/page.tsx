@@ -8,6 +8,8 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { MetricGrid } from '@/components/dashboard/MetricGrid';
 import { TimelineFilter } from '@/components/dashboard/TimelineFilter';
 import { CurrencyTicker } from '@/components/dashboard/CurrencyTicker';
+import { CurrencySettings } from '@/components/finance/CurrencySettings';
+
 
 // Functional Components
 import { RoadmapList } from '@/components/goals/RoadmapList'; 
@@ -260,13 +262,21 @@ export default function OperationalDash() {
           )}
 
           {logic.activeView === 'settings' && (
+            <div className="space-y-6">
+            {/* Configuración de Moneda Base */}
+            <CurrencySettings onUpdate={logic.loadInitialData} />
+            
+            {/* Configuración Financiera */}
             <FinancialSettings 
-              annualBudget={logic.annualBudget} setAnnualBudget={logic.setAnnualBudget}
-              monthlyIncome={logic.monthlyIncome} setMonthlyIncome={logic.setMonthlyIncome}
-              currentCash={logic.currentCash} setCurrentCash={logic.setCurrentCash}
+              annualBudget={logic.annualBudget} 
+              setAnnualBudget={logic.setAnnualBudget}
+              monthlyIncome={logic.monthlyIncome} 
+              setMonthlyIncome={logic.setMonthlyIncome}
+              currentCash={logic.currentCash} 
+              setCurrentCash={logic.setCurrentCash}
             />
-          )}
-
+          </div>
+        )}
         </div>
       </main>
 
