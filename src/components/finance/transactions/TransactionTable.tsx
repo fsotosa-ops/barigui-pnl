@@ -1,19 +1,69 @@
 'use client';
-import { Edit2, Trash2, ArrowUpRight, ArrowDownLeft, List } from 'lucide-react';
+import { Edit2, Trash2, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import { Transaction } from '@/types/finance';
 
 interface TransactionTableProps {
   transactions: Transaction[];
   onEdit: (t: Transaction) => void;
   onDelete: (id: string) => void;
+  selectedIds?: string[];
+  onSelectChange?: (ids: string[]) => void;
 }
 
-export const TransactionTable = ({ transactions, onEdit, onDelete }: TransactionTableProps) => {
+export const TransactionTable = ({ 
+  transactions, 
+  onEdit, 
+  onDelete, 
+  selectedIds = [], 
+  onSelectChange 
+}: TransactionTableProps) => {
+  
+  // Lógica corregida para "Seleccionar Todo"
+  // Solo consideramos las transacciones visibles en la tabla actual para evitar desincronización con la paginación
+  const areAllSelected = transactions.length > 0 && transactions.every(t => selectedIds.includes(t.id));
+
+  const toggleAll = () => {
+    if (!onSelectChange) return;
+
+    if (areAllSelected) {
+      // Si todos los visibles están seleccionados, deseleccionamos solo esos
+      // (Mantenemos los que no están visibles si quisieras selección global, 
+      // pero para simplificar UX de borrado masivo, limpiamos estos IDs)
+      const newSelected = selectedIds.filter(id => !transactions.find(t => t.id === id));
+      onSelectChange(newSelected);
+    } else {
+      // Agregar todos los IDs visibles que no estén ya seleccionados
+      const idsToAdd = transactions.map(t => t.id).filter(id => !selectedIds.includes(id));
+      onSelectChange([...selectedIds, ...idsToAdd]);
+    }
+  };
+
+  const toggleOne = (id: string) => {
+    if (!onSelectChange) return;
+    if (selectedIds.includes(id)) {
+      onSelectChange(selectedIds.filter(sid => sid !== id));
+    } else {
+      onSelectChange([...selectedIds, id]);
+    }
+  };
+
   return (
     <div className="w-full">
       <table className="w-full text-left border-collapse min-w-[600px] md:min-w-0">
         <thead>
           <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+            {onSelectChange && (
+              <th className="pb-4 pl-4 w-10 align-middle">
+                <div className="flex items-center">
+                  <input 
+                    type="checkbox" 
+                    className="w-4 h-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
+                    checked={areAllSelected}
+                    onChange={toggleAll}
+                  />
+                </div>
+              </th>
+            )}
             <th className="pb-4 pl-2">Fecha</th>
             <th className="pb-4">Detalle / Categoría</th>
             <th className="pb-4 text-right">Monto Original</th>
@@ -23,7 +73,21 @@ export const TransactionTable = ({ transactions, onEdit, onDelete }: Transaction
         </thead>
         <tbody className="text-xs">
           {transactions.map((t) => (
-            <tr key={t.id} className="group hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
+            <tr key={t.id} className={`group hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 ${selectedIds.includes(t.id) ? 'bg-emerald-50/30' : ''}`}>
+              
+              {onSelectChange && (
+                <td className="py-4 pl-4 align-middle">
+                   <div className="flex items-center">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
+                      checked={selectedIds.includes(t.id)}
+                      onChange={() => toggleOne(t.id)}
+                    />
+                  </div>
+                </td>
+              )}
+
               <td className="py-4 pl-2 font-bold text-slate-400 tabular-nums">
                 {new Date(t.date).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' })}
               </td>
@@ -48,7 +112,6 @@ export const TransactionTable = ({ transactions, onEdit, onDelete }: Transaction
                 </div>
               </td>
               <td className={`py-4 text-right pr-4 font-black tabular-nums text-sm ${t.type === 'income' ? 'text-emerald-500' : 'text-slate-800'}`}>
-                {/* MOSTRAR USD REAL CON DECIMALES */}
                 {t.type === 'income' ? '+' : '-'}${t.amountUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </td>
               <td className="py-4">
