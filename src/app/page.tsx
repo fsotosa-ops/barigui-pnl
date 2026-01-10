@@ -257,10 +257,10 @@ export default function OperationalDash() {
               setTransactions={logic.setTransactions}
               onAdd={logic.handleAddTransaction}
               onDelete={logic.handleDeleteTransaction}
-              // PROPS DE SELECCIÓN MASIVA CONECTADOS
               selectedIds={logic.selectedIds}
               setSelectedIds={logic.setSelectedIds}
               onBulkDelete={logic.handleBulkDelete}
+              initialCurrency={logic.displayCurrency} // <-- NUEVO: Sincronización de moneda
             />
           )}
 

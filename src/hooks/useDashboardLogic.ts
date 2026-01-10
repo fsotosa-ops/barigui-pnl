@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Transaction, Task } from '@/types/finance';
@@ -18,12 +19,15 @@ export const useDashboardLogic = () => {
 
   // DATA STATE
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]); // Selección masiva
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   
   // FILTERS DASHBOARD
   const [metricMode, setMetricMode] = useState<'annual' | 'rolling'>('rolling');
+  
+  // CORRECCIÓN 2 y 3: Moneda inicial 'USD' pero se sobreescribe al cargar perfil
   const [displayCurrency, setDisplayCurrency] = useState<string>('USD'); 
+  
   const [periodFilter, setPeriodFilter] = useState<'Mensual' | 'Trimestral' | 'Anual'>('Anual');
   const [scenario, setScenario] = useState<'base' | 'worst' | 'best'>('base');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -62,6 +66,11 @@ export const useDashboardLogic = () => {
       setAnnualBudget(Number(prof.annual_budget));
       setMonthlyIncome(Number(prof.monthly_income));
       setCurrentCash(Number(prof.current_cash));
+      
+      // Sincronización Automática de Moneda
+      if (prof.base_currency) {
+        setDisplayCurrency(prof.base_currency);
+      }
     }
     
     await refreshTransactions();
@@ -72,7 +81,6 @@ export const useDashboardLogic = () => {
 
   useEffect(() => { loadInitialData(); }, []);
 
-  // BULK ACTIONS
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     const { error } = await supabase.from('transactions').delete().in('id', selectedIds);
@@ -89,7 +97,6 @@ export const useDashboardLogic = () => {
   };
 
   const handleAddTransaction = async (txData: Partial<Transaction>) => {
-    // Si viene de formulario manual y es en CLP, convertir
     const usdVal = txData.amountUSD || (txData.originalAmount && txData.originalCurrency ? convertToUSD(txData.originalAmount, txData.originalCurrency) : 0);
     
     await fetch('/api/transactions/create', {
@@ -107,20 +114,25 @@ export const useDashboardLogic = () => {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      
       const parseRes = await fetch('/api/parse-statement', { method: 'POST', body: formData });
-      const { transactions: parsedTxs } = await parseRes.json();
+      const data = await parseRes.json();
+
+      if (!parseRes.ok) throw new Error(data.error || "Error al procesar");
+      
+      const parsedTxs = data.transactions;
+      if (!Array.isArray(parsedTxs)) throw new Error("Formato inválido");
 
       let count = 0;
       for (const tx of parsedTxs) {
-        // CONVERSIÓN CRÍTICA: CLP -> USD antes de guardar
-        const calculatedUSD = convertToUSD(tx.amount, tx.currency || 'CLP');
+        const calculatedUSD = convertToUSD(Number(tx.amount || 0), tx.currency || 'CLP');
         
         await fetch('/api/transactions/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...tx,
-            amount: calculatedUSD, // Aquí se guarda el valor en dólares
+            amount: calculatedUSD,
             originalAmount: tx.amount,
             currency: tx.currency || 'CLP',
             scope: tx.scope || 'personal'
@@ -130,13 +142,14 @@ export const useDashboardLogic = () => {
       }
       await refreshTransactions();
       setNotification({ isOpen: true, type: 'success', title: 'Importación Exitosa', details: [`${count} transacciones procesadas.`] });
+    } catch (err: any) {
+      setNotification({ isOpen: true, type: 'error', title: 'Error', details: [err.message] });
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  // KPIs
   const kpiData = useMemo(() => {
     const now = new Date();
     const isRolling = metricMode === 'rolling';
@@ -156,9 +169,10 @@ export const useDashboardLogic = () => {
     const expenseUSD = txs.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amountUSD, 0);
     const avgExpense = expenseUSD / divisor;
     
-    // Perfil en USD (si base_currency != USD, convertir)
     let incomeUSD = monthlyIncome;
     let cashUSD = currentCash;
+    
+    // Si los datos del perfil NO están en USD, convertirlos a USD para el cálculo interno
     if (profile?.base_currency && profile.base_currency !== 'USD') {
         incomeUSD = convertToUSD(monthlyIncome, profile.base_currency);
         cashUSD = convertToUSD(currentCash, profile.base_currency);
@@ -168,8 +182,19 @@ export const useDashboardLogic = () => {
     const savingsRate = incomeUSD > 0 ? Math.round(((incomeUSD - avgExpense) / incomeUSD) * 100) : 0;
     const runway = avgExpense > 0 ? parseFloat((cashUSD / avgExpense).toFixed(1)) : 0;
 
-    return { variance: varianceUSD, runway, savingsRate, currency: displayCurrency };
-  }, [metricMode, transactions, selectedYear, monthlyIncome, currentCash, profile, displayCurrency]);
+    // AHORA: Convertir los resultados (que están en USD) a la moneda de visualización (displayCurrency)
+    let displayVariance = varianceUSD;
+    if (displayCurrency !== 'USD' && rates[displayCurrency]) {
+       displayVariance = varianceUSD * rates[displayCurrency];
+    }
+
+    return { 
+      variance: displayVariance, 
+      runway, 
+      savingsRate, 
+      currency: displayCurrency 
+    };
+  }, [metricMode, transactions, selectedYear, monthlyIncome, currentCash, profile, displayCurrency, rates, convertToUSD]);
 
   return {
     sidebarOpen, setSidebarOpen, activeView, setActiveView, isEntryOpen, setIsEntryOpen, isUploading, fileInputRef,
@@ -187,4 +212,4 @@ export const useDashboardLogic = () => {
   };
 };
 
-const updateProfile = async (field: string, value: number) => { /* Placeholder ref to internal logic */ };
+const updateProfile = async (field: string, value: number) => { };
