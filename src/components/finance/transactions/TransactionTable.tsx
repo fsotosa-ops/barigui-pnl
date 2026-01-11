@@ -8,7 +8,7 @@ interface TransactionTableProps {
   onDelete: (id: string) => void;
   selectedIds?: string[];
   onSelectChange?: (ids: string[]) => void;
-  importBatches?: ImportBatch[]; // Nueva prop para cruzar datos
+  importBatches?: ImportBatch[]; 
 }
 
 export const TransactionTable = ({ 
@@ -42,7 +42,6 @@ export const TransactionTable = ({
     }
   };
 
-  // Helper para obtener datos del lote
   const getBatchInfo = (batchId?: string) => {
     if (!batchId) return { name: 'Manual', date: null };
     const batch = importBatches.find(b => b.id === batchId);
@@ -71,7 +70,7 @@ export const TransactionTable = ({
             )}
             <th className="pb-4 pl-2">Fecha</th>
             <th className="pb-4">Detalle / Categoría</th>
-            <th className="pb-4">Origen / Carga</th> {/* Nueva Columna */}
+            <th className="pb-4">Origen / Carga</th>
             <th className="pb-4 text-right">Monto Original</th>
             <th className="pb-4 text-right pr-4">Monto USD</th>
             <th className="pb-4 text-center">Acciones</th>
@@ -114,7 +113,6 @@ export const TransactionTable = ({
                   </div>
                 </td>
 
-                {/* COLUMNA DE ORIGEN / LOTE */}
                 <td className="py-4">
                    <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-1.5 text-slate-500">
