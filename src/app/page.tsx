@@ -8,8 +8,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { MetricGrid } from '@/components/dashboard/MetricGrid';
 import { TimelineFilter } from '@/components/dashboard/TimelineFilter';
 import { CurrencyTicker } from '@/components/dashboard/CurrencyTicker';
-import { ImportHistory } from '@/components/settings/ImportHistory'; 
-import { UploadModal } from '@/components/settings/UploadModal'; // NUEVO COMPONENTE
+import { UploadModal } from '@/components/settings/UploadModal';
 
 // Functional Components
 import { RoadmapList } from '@/components/goals/RoadmapList'; 
@@ -112,14 +111,14 @@ export default function OperationalDash() {
           <div className="flex flex-col w-full xl:w-auto gap-4">
              <CurrencyTicker />
              
-             {/* ÁREA DE CARGA DE ARCHIVOS ACTUALIZADA (Sin selector suelto) */}
+             {/* ÁREA DE CARGA DE ARCHIVOS */}
              <div className="flex gap-2 w-full justify-end">
                <div className="relative">
                  <input 
                     type="file" 
                     className="hidden" 
                     ref={logic.fileInputRef} 
-                    onChange={logic.handleFileSelect} // CAMBIO AQUÍ: handleFileSelect
+                    onChange={logic.handleFileSelect} 
                     accept=".png,.jpg,.jpeg,.csv,.xlsx,.xls" 
                  />
                  <button 
@@ -262,15 +261,13 @@ export default function OperationalDash() {
               setSelectedIds={logic.setSelectedIds}
               onBulkDelete={logic.handleBulkDelete}
               initialCurrency={logic.displayCurrency}
+              importBatches={logic.importBatches} // Pasamos los lotes para el filtro
             />
           )}
 
           {logic.activeView === 'settings' && (
             <div className="space-y-6">
-              <ImportHistory 
-                batches={logic.importBatches} 
-                onDeleteBatch={logic.handleDeleteBatch} 
-              />
+              {/* ImportHistory ELIMINADO de aquí */}
               
               <FinancialSettings 
                 annualBudget={logic.annualBudget} 
@@ -301,7 +298,6 @@ export default function OperationalDash() {
         onAdd={logic.handleAddTransaction}
       />
 
-      {/* MODAL DE CARGA - INTERCEPTOR */}
       <UploadModal 
         isOpen={logic.showUploadModal}
         onClose={() => logic.setShowUploadModal(false)}

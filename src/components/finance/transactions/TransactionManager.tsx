@@ -1,9 +1,9 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
 import { 
-  Plus, Search, PieChart, List, BarChart3, TrendingUp, TrendingDown, Globe, Briefcase, User, Trash2, AlertTriangle 
+  Plus, Search, PieChart, List, BarChart3, TrendingUp, TrendingDown, Globe, Briefcase, User, Trash2, AlertTriangle, FileInput 
 } from 'lucide-react';
-import { Transaction } from '@/types/finance';
+import { Transaction, ImportBatch } from '@/types/finance';
 import { TransactionTable } from './TransactionTable';
 import { TransactionForm } from './TransactionForm';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
@@ -18,8 +18,9 @@ interface TransactionManagerProps {
   selectedIds?: string[];
   setSelectedIds?: (ids: string[]) => void;
   onBulkDelete?: () => Promise<void>;
-  onUpdate?: (tx: any) => Promise<void>; // Nuevo: Para editar
+  onUpdate?: (tx: any) => Promise<void>;
   initialCurrency?: string;
+  importBatches?: ImportBatch[]; // Nueva prop
 }
 
 export const TransactionManager = ({ 
@@ -31,7 +32,8 @@ export const TransactionManager = ({
   selectedIds = [], 
   setSelectedIds = () => {}, 
   onBulkDelete = async () => {},
-  initialCurrency = 'USD'
+  initialCurrency = 'USD',
+  importBatches = []
 }: TransactionManagerProps) => {
   const [activeScope, setActiveScope] = useState<'all' | 'business' | 'personal'>('all');
   const [viewMode, setViewMode] = useState<'list' | 'analysis'>('list');
@@ -102,6 +104,15 @@ export const TransactionManager = ({
     setIsModalOpen(false);
   };
 
+  // Lógica para seleccionar todas las transacciones de un lote
+  const handleSelectByBatch = (batchId: string) => {
+     if (batchId === 'all') return;
+     const batchTxIds = transactions
+        .filter(t => t.importBatchId === batchId)
+        .map(t => t.id);
+     setSelectedIds(batchTxIds);
+  };
+
   return (
     <div className="flex flex-col gap-6 animate-in fade-in duration-500 pb-20">
       
@@ -114,20 +125,42 @@ export const TransactionManager = ({
              <button onClick={() => setSelectedIds([])} className="text-xs text-slate-400 hover:text-slate-600 font-medium">Cancelar</button>
            </div>
         ) : (
-          <div className="flex bg-slate-200/50 p-1 rounded-2xl border border-slate-200 w-full md:w-auto">
-             {[
-               { id: 'all', label: 'Consolidado', icon: <Globe size={14}/> },
-               { id: 'business', label: 'Negocio', icon: <Briefcase size={14}/> },
-               { id: 'personal', label: 'Personal', icon: <User size={14}/> }
-             ].map((s) => (
-               <button
-                 key={s.id}
-                 onClick={() => { setActiveScope(s.id as any); setCurrentPage(1); }}
-                 className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeScope === s.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-               >
-                 {s.icon} {s.label}
-               </button>
-             ))}
+          <div className="flex flex-wrap gap-4 items-center w-full md:w-auto">
+              <div className="flex bg-slate-200/50 p-1 rounded-2xl border border-slate-200">
+                {[
+                  { id: 'all', label: 'Consolidado', icon: <Globe size={14}/> },
+                  { id: 'business', label: 'Negocio', icon: <Briefcase size={14}/> },
+                  { id: 'personal', label: 'Personal', icon: <User size={14}/> }
+                ].map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => { setActiveScope(s.id as any); setCurrentPage(1); }}
+                    className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeScope === s.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    {s.icon} {s.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* SELECTOR DE ARCHIVOS / LOTES */}
+              {importBatches.length > 0 && (
+                <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200 shadow-sm pl-3">
+                    <FileInput size={14} className="text-slate-400"/>
+                    <span className="text-[9px] font-black text-slate-400 uppercase hidden md:inline">Sel. Archivo:</span>
+                    <select 
+                        onChange={(e) => handleSelectByBatch(e.target.value)}
+                        className="text-[10px] font-black outline-none pr-2 py-1.5 bg-transparent cursor-pointer text-slate-700 max-w-[120px]"
+                        defaultValue="all"
+                    >
+                        <option value="all">Elegir para borrar...</option>
+                        {importBatches.map(batch => (
+                            <option key={batch.id} value={batch.id}>
+                                {batch.filename} ({new Date(batch.created_at).toLocaleDateString()})
+                            </option>
+                        ))}
+                    </select>
+                </div>
+              )}
           </div>
         )}
 
@@ -193,7 +226,8 @@ export const TransactionManager = ({
                     onEdit={(t) => { setEditingItem(t); setIsModalOpen(true); }} 
                     onDelete={onDelete!}
                     selectedIds={selectedIds}
-                    onSelectChange={setSelectedIds!} 
+                    onSelectChange={setSelectedIds!}
+                    importBatches={importBatches} // Pasamos los lotes
                 />
             </div>
           </>
