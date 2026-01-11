@@ -17,7 +17,11 @@ export const useDashboardLogic = () => {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Moneda seleccionada para la subida de archivo
+  // NUEVO: Estado para el Modal de Carga
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  
+  // Moneda seleccionada para la subida de archivo (Reemplazada por la lógica del modal, pero mantenemos estado si se requiere fallback)
   const [uploadCurrency, setUploadCurrency] = useState<string>('CLP');
 
   // --- DATA STATE ---
@@ -108,25 +112,40 @@ export const useDashboardLogic = () => {
 
   useEffect(() => { loadInitialData(); }, []);
 
-  // --- LÓGICA DE UPLOAD CON CORRECCIÓN DE ERROR ---
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || ratesLoading) return;
+  // --- LÓGICA DE UPLOAD REFACTORIZADA ---
+
+  // PASO 1: Capturar archivo y abrir modal
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      setPendingFile(e.target.files[0]);
+      setShowUploadModal(true);
+    }
+    // Limpiamos el input para permitir re-selección del mismo archivo si falla
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // PASO 2: Confirmar carga con parámetros del modal
+  const handleConfirmUpload = async (modalData: { batchName: string; currency: string; date: string }) => {
+    if (!pendingFile || isUploading) return;
 
     setIsUploading(true);
     try {
-      // 1. Crear el Lote en DB
+      const user = (await supabase.auth.getUser()).data.user;
+      if (!user) throw new Error("Usuario no autenticado");
+
+      // 1. Crear el Lote en DB (Usando los campos de tu SQL)
       const { data: batchData, error: batchError } = await supabase
         .from('import_batches')
         .insert([{
-            filename: file.name,
-            currency: uploadCurrency,
+            user_id: user.id,
+            file_name: modalData.batchName,     // Nombre editado por usuario
+            base_currency: modalData.currency,  // Moneda base del lote
+            import_date: modalData.date,        // Fecha contable
             record_count: 0 
         }])
         .select()
         .single();
         
-      // CORRECCIÓN AQUÍ: Separamos las validaciones para evitar el error de TypeScript
       if (batchError) {
         throw new Error("Error creando lote: " + batchError.message);
       }
@@ -136,9 +155,9 @@ export const useDashboardLogic = () => {
 
       const batchId = batchData.id;
 
-      // 2. Parsear Archivo
+      // 2. Parsear Archivo con IA
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', pendingFile);
       
       const parseRes = await fetch('/api/parse-statement', { method: 'POST', body: formData });
       const data = await parseRes.json();
@@ -151,7 +170,8 @@ export const useDashboardLogic = () => {
       // 3. Insertar Transacciones
       let count = 0;
       for (const tx of parsedTxs) {
-        const txCurrency = uploadCurrency; 
+        // Usamos la moneda definida en el MODAL, no la global
+        const txCurrency = modalData.currency; 
         const calculatedUSD = convertToUSD(Number(tx.amount || 0), txCurrency);
         
         await fetch('/api/transactions/create', {
@@ -163,24 +183,34 @@ export const useDashboardLogic = () => {
             originalAmount: tx.amount,
             currency: txCurrency,
             scope: tx.scope || 'personal',
-            importBatchId: batchId
+            importBatchId: batchId,
+            date: tx.date // Mantenemos la fecha individual de la transacción
           })
         });
         count++;
       }
 
-      // 4. Actualizar contador
+      // 4. Actualizar contador del lote
       await supabase.from('import_batches').update({ record_count: count }).eq('id', batchId);
 
       await refreshTransactions();
       await loadBatches();
-      setNotification({ isOpen: true, type: 'success', title: 'Importación Exitosa', details: [`Lote creado: ${file.name}`, `${count} registros procesados.`] });
+      setNotification({ 
+        isOpen: true, 
+        type: 'success', 
+        title: 'Importación Exitosa', 
+        details: [`Lote: ${modalData.batchName}`, `${count} registros procesados.`] 
+      });
+
+      // Limpieza
+      setShowUploadModal(false);
+      setPendingFile(null);
+
     } catch (err: any) {
       console.error(err);
       setNotification({ isOpen: true, type: 'error', title: 'Error', details: [err.message] });
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -286,7 +316,11 @@ export const useDashboardLogic = () => {
   return {
     sidebarOpen, setSidebarOpen, activeView, setActiveView, isEntryOpen, setIsEntryOpen, isUploading, fileInputRef,
     transactions, setTransactions, selectedIds, setSelectedIds, importBatches,
-    handleDeleteTransaction, handleBulkDelete, handleAddTransaction, handleUpdateTransaction, handleFileUpload, handleDeleteBatch,
+    handleDeleteTransaction, handleBulkDelete, handleAddTransaction, handleUpdateTransaction, 
+    handleFileSelect, // NUEVO
+    handleConfirmUpload, // NUEVO
+    handleDeleteBatch,
+    showUploadModal, setShowUploadModal, pendingFile, // NUEVOS ESTADOS
     uploadCurrency, setUploadCurrency,
     metricMode, setMetricMode, displayCurrency, setDisplayCurrency,
     tasks, handleAddTask: () => {}, handleToggleTask: () => {}, handleDeleteTask: () => {},

@@ -1,14 +1,15 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, UploadCloud, Loader2, Calendar, Menu, Globe } from 'lucide-react';
+import { Plus, UploadCloud, Loader2, Calendar, Menu } from 'lucide-react';
 
 // Layout & Visuals
 import { Sidebar } from '@/components/layout/Sidebar';
 import { MetricGrid } from '@/components/dashboard/MetricGrid';
 import { TimelineFilter } from '@/components/dashboard/TimelineFilter';
 import { CurrencyTicker } from '@/components/dashboard/CurrencyTicker';
-import { ImportHistory } from '@/components/settings/ImportHistory'; // NUEVO COMPONENTE
+import { ImportHistory } from '@/components/settings/ImportHistory'; 
+import { UploadModal } from '@/components/settings/UploadModal'; // NUEVO COMPONENTE
 
 // Functional Components
 import { RoadmapList } from '@/components/goals/RoadmapList'; 
@@ -111,22 +112,16 @@ export default function OperationalDash() {
           <div className="flex flex-col w-full xl:w-auto gap-4">
              <CurrencyTicker />
              
-             {/* ÁREA DE CARGA DE ARCHIVOS CON SELECTOR DE MONEDA */}
-             <div className="flex gap-2 w-full">
-               <div className="relative bg-white border border-slate-200 rounded-2xl flex items-center shadow-sm w-32 shrink-0">
-                  <div className="pl-3 text-slate-400"><Globe size={16}/></div>
-                  <select 
-                    value={logic.uploadCurrency} 
-                    onChange={(e) => logic.setUploadCurrency(e.target.value)}
-                    className="w-full bg-transparent p-3 text-xs font-black outline-none cursor-pointer appearance-none text-slate-700"
-                    title="Moneda del archivo a cargar"
-                  >
-                    {['CLP', 'USD', 'BRL', 'EUR', 'COP', 'MXN'].map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-               </div>
-               
-               <div className="relative flex-1">
-                 <input type="file" className="hidden" ref={logic.fileInputRef} onChange={logic.handleFileUpload} accept=".png,.jpg,.jpeg,.csv,.xlsx,.xls" />
+             {/* ÁREA DE CARGA DE ARCHIVOS ACTUALIZADA (Sin selector suelto) */}
+             <div className="flex gap-2 w-full justify-end">
+               <div className="relative">
+                 <input 
+                    type="file" 
+                    className="hidden" 
+                    ref={logic.fileInputRef} 
+                    onChange={logic.handleFileSelect} // CAMBIO AQUÍ: handleFileSelect
+                    accept=".png,.jpg,.jpeg,.csv,.xlsx,.xls" 
+                 />
                  <button 
                    onClick={() => logic.fileInputRef.current?.click()}
                    disabled={logic.isUploading}
@@ -272,7 +267,6 @@ export default function OperationalDash() {
 
           {logic.activeView === 'settings' && (
             <div className="space-y-6">
-              {/* AQUÍ ESTÁ EL REEMPLAZO: ImportHistory en lugar de CurrencySettings */}
               <ImportHistory 
                 batches={logic.importBatches} 
                 onDeleteBatch={logic.handleDeleteBatch} 
@@ -305,6 +299,15 @@ export default function OperationalDash() {
         isOpen={logic.isEntryOpen} 
         onClose={() => logic.setIsEntryOpen(false)} 
         onAdd={logic.handleAddTransaction}
+      />
+
+      {/* MODAL DE CARGA - INTERCEPTOR */}
+      <UploadModal 
+        isOpen={logic.showUploadModal}
+        onClose={() => logic.setShowUploadModal(false)}
+        file={logic.pendingFile}
+        onConfirm={logic.handleConfirmUpload}
+        isProcessing={logic.isUploading}
       />
 
       <ProcessNotification 
