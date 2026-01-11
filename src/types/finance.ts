@@ -9,6 +9,15 @@ export interface Transaction {
   originalCurrency: string;
   exchangeRate: number;
   amountUSD: number;
+  importBatchId?: string; // Nuevo campo para vincular al lote
+}
+
+export interface ImportBatch {
+  id: string;
+  filename: string;
+  currency: string;
+  record_count: number;
+  created_at: string;
 }
 
 export interface Task {
@@ -18,11 +27,5 @@ export interface Task {
   blocked: boolean;
   blockerDescription?: string;
   impact: 'high' | 'medium' | 'low';
-  dueDate?: string | null; // Aceptamos null para compatibilidad con DB
-}
-
-export interface FinancialProfile {
-  annual_budget: number;
-  monthly_income: number;
-  current_cash: number;
+  dueDate?: string | null;
 }

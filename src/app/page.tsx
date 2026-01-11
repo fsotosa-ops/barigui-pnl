@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, UploadCloud, Loader2, Calendar, Menu } from 'lucide-react';
+import { Plus, UploadCloud, Loader2, Calendar, Menu, Globe } from 'lucide-react';
 
 // Layout & Visuals
 import { Sidebar } from '@/components/layout/Sidebar';
 import { MetricGrid } from '@/components/dashboard/MetricGrid';
 import { TimelineFilter } from '@/components/dashboard/TimelineFilter';
 import { CurrencyTicker } from '@/components/dashboard/CurrencyTicker';
-import { CurrencySettings } from '@/components/finance/CurrencySettings';
+import { ImportHistory } from '@/components/settings/ImportHistory'; // NUEVO COMPONENTE
 
 // Functional Components
 import { RoadmapList } from '@/components/goals/RoadmapList'; 
@@ -61,6 +61,7 @@ export default function OperationalDash() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex selection:bg-emerald-100 selection:text-emerald-900 overflow-x-hidden">
       
+      {/* SIDEBAR CONECTADO CORRECTAMENTE */}
       <Sidebar 
         isOpen={logic.sidebarOpen} 
         toggle={() => logic.setSidebarOpen(!logic.sidebarOpen)} 
@@ -107,29 +108,34 @@ export default function OperationalDash() {
             </p>
           </div>
           
-          <div className="md:hidden w-full">
-              <h2 className="text-2xl font-black text-slate-800 mb-1">
-                {logic.activeView === 'dash' ? 'Resumen' : 
-                 logic.activeView === 'transactions' ? 'Movimientos' : 
-                 logic.activeView === 'roadmap' ? 'Roadmap' : 
-                 'Planning'}
-              </h2>
-              <p className="text-xs text-slate-400 font-medium">Vista general de estado</p>
-          </div>
-          
           <div className="flex flex-col w-full xl:w-auto gap-4">
              <CurrencyTicker />
              
-             <div className="relative w-full">
-               <input type="file" className="hidden" ref={logic.fileInputRef} onChange={logic.handleFileUpload} accept=".png,.jpg,.jpeg,.csv,.xlsx,.xls" />
-               <button 
-                 onClick={() => logic.fileInputRef.current?.click()}
-                 disabled={logic.isUploading}
-                 className="w-full bg-white hover:bg-slate-50 text-slate-800 px-5 py-4 rounded-2xl border border-slate-200 shadow-sm font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95"
-               >
-                 {logic.isUploading ? <Loader2 size={18} className="animate-spin text-emerald-500"/> : <UploadCloud size={18} className="text-emerald-500"/>}
-                 {logic.isUploading ? 'Analizando...' : 'Importar Datos'}
-               </button>
+             {/* ÁREA DE CARGA DE ARCHIVOS CON SELECTOR DE MONEDA */}
+             <div className="flex gap-2 w-full">
+               <div className="relative bg-white border border-slate-200 rounded-2xl flex items-center shadow-sm w-32 shrink-0">
+                  <div className="pl-3 text-slate-400"><Globe size={16}/></div>
+                  <select 
+                    value={logic.uploadCurrency} 
+                    onChange={(e) => logic.setUploadCurrency(e.target.value)}
+                    className="w-full bg-transparent p-3 text-xs font-black outline-none cursor-pointer appearance-none text-slate-700"
+                    title="Moneda del archivo a cargar"
+                  >
+                    {['CLP', 'USD', 'BRL', 'EUR', 'COP', 'MXN'].map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+               </div>
+               
+               <div className="relative flex-1">
+                 <input type="file" className="hidden" ref={logic.fileInputRef} onChange={logic.handleFileUpload} accept=".png,.jpg,.jpeg,.csv,.xlsx,.xls" />
+                 <button 
+                   onClick={() => logic.fileInputRef.current?.click()}
+                   disabled={logic.isUploading}
+                   className="w-full bg-white hover:bg-slate-50 text-slate-800 px-5 py-3.5 rounded-2xl border border-slate-200 shadow-sm font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 whitespace-nowrap"
+                 >
+                   {logic.isUploading ? <Loader2 size={18} className="animate-spin text-emerald-500"/> : <UploadCloud size={18} className="text-emerald-500"/>}
+                   {logic.isUploading ? 'Analizando...' : 'Importar Datos'}
+                 </button>
+               </div>
              </div>
           </div>
         </header>
@@ -139,7 +145,7 @@ export default function OperationalDash() {
           {/* VISTA DASHBOARD */}
           {logic.activeView === 'dash' && (
             <>
-              {/* METRIC GRID CON SWITCH DE MODO Y MONEDA */}
+              {/* METRIC GRID */}
               <MetricGrid 
                  data={logic.kpiData} 
                  mode={logic.metricMode} 
@@ -150,7 +156,6 @@ export default function OperationalDash() {
               
               {/* CHART CARD */}
               <div className="bg-white p-5 md:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
-                 
                  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-6 z-10 relative">
                     <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
                         <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2 shrink-0">
@@ -256,30 +261,37 @@ export default function OperationalDash() {
               transactions={logic.transactions} 
               setTransactions={logic.setTransactions}
               onAdd={logic.handleAddTransaction}
+              onUpdate={logic.handleUpdateTransaction}
               onDelete={logic.handleDeleteTransaction}
               selectedIds={logic.selectedIds}
               setSelectedIds={logic.setSelectedIds}
               onBulkDelete={logic.handleBulkDelete}
-              initialCurrency={logic.displayCurrency} // <-- NUEVO: Sincronización de moneda
+              initialCurrency={logic.displayCurrency}
             />
           )}
 
           {logic.activeView === 'settings' && (
             <div className="space-y-6">
-            <CurrencySettings onUpdate={logic.loadInitialData} />
-            <FinancialSettings 
-              annualBudget={logic.annualBudget} 
-              setAnnualBudget={logic.setAnnualBudget}
-              monthlyIncome={logic.monthlyIncome} 
-              setMonthlyIncome={logic.setMonthlyIncome}
-              currentCash={logic.currentCash} 
-              setCurrentCash={logic.setCurrentCash}
-            />
-          </div>
-        )}
+              {/* AQUÍ ESTÁ EL REEMPLAZO: ImportHistory en lugar de CurrencySettings */}
+              <ImportHistory 
+                batches={logic.importBatches} 
+                onDeleteBatch={logic.handleDeleteBatch} 
+              />
+              
+              <FinancialSettings 
+                annualBudget={logic.annualBudget} 
+                setAnnualBudget={logic.setAnnualBudget}
+                monthlyIncome={logic.monthlyIncome} 
+                setMonthlyIncome={logic.setMonthlyIncome}
+                currentCash={logic.currentCash} 
+                setCurrentCash={logic.setCurrentCash}
+              />
+            </div>
+          )}
         </div>
       </main>
 
+      {/* ELEMENTOS FLOTANTES */}
       <button 
         onClick={() => logic.setIsEntryOpen(true)} 
         className="fixed bottom-8 right-6 md:bottom-10 md:right-10 bg-slate-900 text-white w-14 h-14 md:w-16 md:h-16 rounded-[1.5rem] shadow-2xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-40 border-[4px] md:border-[6px] border-white group"

@@ -1,5 +1,20 @@
 -- ==============================================================================
--- 1. ACTUALIZACIÓN DE TABLAS (Agregar columnas faltantes de forma segura)
+-- 1. ESTRUCTURA DE IMPORTACIÓN (NUEVO: Lógica de Batches/Lotes)
+-- ==============================================================================
+
+-- Crear tabla para gestionar los lotes de carga (El formulario de importación)
+CREATE TABLE IF NOT EXISTS import_batches (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    file_name text NOT NULL,        -- Nombre del archivo subido
+    base_currency text NOT NULL,    -- Moneda seleccionada en el formulario
+    account_source text,            -- "Cartola que carga" (ej: Visa Santander, Cta Cte)
+    import_date timestamp with time zone DEFAULT now(), -- Fecha de carga manual o automática
+    created_at timestamp with time zone DEFAULT now()
+);
+
+-- ==============================================================================
+-- 2. ACTUALIZACIÓN DE TABLAS (Agregar columnas faltantes)
 -- ==============================================================================
 
 -- Tabla Profiles: Agregar moneda base
@@ -10,7 +25,7 @@ BEGIN
     END IF;
 END $$;
 
--- Tabla Transactions: Agregar scope y deleted_at
+-- Tabla Transactions: Agregar scope, deleted_at y VINCULO CON BATCH
 DO $$ 
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transactions' AND column_name = 'scope') THEN
@@ -19,6 +34,11 @@ BEGIN
 
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transactions' AND column_name = 'deleted_at') THEN
         ALTER TABLE transactions ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+    END IF;
+
+    -- Nueva columna para vincular la transacción a su lote de importación
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transactions' AND column_name = 'import_batch_id') THEN
+        ALTER TABLE transactions ADD COLUMN import_batch_id uuid REFERENCES import_batches(id) ON DELETE SET NULL;
     END IF;
 END $$;
 
@@ -35,17 +55,18 @@ BEGIN
 END $$;
 
 -- ==============================================================================
--- 2. LIMPIEZA Y REGENERACIÓN DE POLÍTICAS (Solución al error 42710)
+-- 3. LIMPIEZA Y REGENERACIÓN DE POLÍTICAS (RLS)
 -- ==============================================================================
 
--- Habilitar RLS (seguro de ejecutar múltiples veces)
+-- Habilitar RLS
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE financial_memory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE import_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE import_batches ENABLE ROW LEVEL SECURITY; -- Nueva tabla
 
--- Eliminar políticas antiguas para evitar conflictos
+-- Limpiar políticas antiguas
 DROP POLICY IF EXISTS "Usuarios ven su propio perfil" ON profiles;
 DROP POLICY IF EXISTS "Usuarios actualizan su propio perfil" ON profiles;
 DROP POLICY IF EXISTS "Usuarios insertan su propio perfil" ON profiles;
@@ -54,33 +75,34 @@ DROP POLICY IF EXISTS "Usuarios ven sus transacciones" ON transactions;
 DROP POLICY IF EXISTS "Usuarios insertan sus transacciones" ON transactions;
 DROP POLICY IF EXISTS "Usuarios actualizan sus transacciones" ON transactions;
 DROP POLICY IF EXISTS "Usuarios borran sus transacciones" ON transactions;
-DROP POLICY IF EXISTS "Usuarios pueden archivar transacciones" ON transactions;
 
 DROP POLICY IF EXISTS "Usuarios gestionan sus tareas" ON tasks;
 DROP POLICY IF EXISTS "Usuarios gestionan su memoria" ON financial_memory;
 DROP POLICY IF EXISTS "Usuarios gestionan sus logs" ON import_logs;
+DROP POLICY IF EXISTS "Usuarios gestionan sus lotes" ON import_batches;
 
--- Crear nuevas políticas limpias
+-- Crear nuevas políticas
 -- Profiles
 CREATE POLICY "Usuarios ven su propio perfil" ON profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Usuarios actualizan su propio perfil" ON profiles FOR UPDATE USING (auth.uid() = id);
 CREATE POLICY "Usuarios insertan su propio perfil" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 
--- Transactions (Incluyendo Soft Delete)
+-- Import Batches (Lotes de carga)
+CREATE POLICY "Usuarios gestionan sus lotes" ON import_batches FOR ALL USING (auth.uid() = user_id);
+
+-- Transactions 
 CREATE POLICY "Usuarios ven sus transacciones" ON transactions FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Usuarios insertan sus transacciones" ON transactions FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Usuarios actualizan sus transacciones" ON transactions FOR UPDATE USING (auth.uid() = user_id);
 CREATE POLICY "Usuarios borran sus transacciones" ON transactions FOR DELETE USING (auth.uid() = user_id);
 
--- Tasks
+-- Otras tablas
 CREATE POLICY "Usuarios gestionan sus tareas" ON tasks FOR ALL USING (auth.uid() = user_id);
-
--- Memory & Logs
 CREATE POLICY "Usuarios gestionan su memoria" ON financial_memory FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Usuarios gestionan sus logs" ON import_logs FOR ALL USING (auth.uid() = user_id);
 
 -- ==============================================================================
--- 3. RESTRICCIONES DE INTEGRIDAD (Solución al error 500)
+-- 4. RESTRICCIONES DE INTEGRIDAD (Constraint Único)
 -- ==============================================================================
 
 -- Actualizar índice único para incluir 'scope'
@@ -92,13 +114,15 @@ BEGIN
   END IF;
 END $$;
 
--- Crear restricción nueva
+-- Crear restricción nueva 
+-- NOTA: No incluimos import_batch_id aquí para evitar que se suba la misma transacción 
+-- dos veces en cargas diferentes (duplicados reales).
 ALTER TABLE transactions
 ADD CONSTRAINT unique_transaction_entry 
 UNIQUE (user_id, date, description, original_amount, type, scope);
 
 -- ==============================================================================
--- 4. FUNCIONES DE IA (RAG)
+-- 5. FUNCIONES DE IA (RAG)
 -- ==============================================================================
 
 CREATE OR REPLACE FUNCTION match_financial_memory (
