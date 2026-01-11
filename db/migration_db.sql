@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS import_batches (
     file_name text NOT NULL,        -- Nombre del archivo subido
     base_currency text NOT NULL,    -- Moneda seleccionada en el formulario
     account_source text,            -- "Cartola que carga" (ej: Visa Santander, Cta Cte)
+    record_count integer DEFAULT 0,  -- <--- COLUMNA AGREGADA PARA EL CONTEO DE REGISTROS
     import_date timestamp with time zone DEFAULT now(), -- Fecha de carga manual o automática
     created_at timestamp with time zone DEFAULT now()
 );
@@ -63,7 +64,7 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE financial_memory ENABLE ROW LEVEL SECURITY;
-ALTER TABLE import_logs ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE import_logs ENABLE ROW LEVEL SECURITY; -- Se asume tabla existente
 ALTER TABLE import_batches ENABLE ROW LEVEL SECURITY; -- Nueva tabla
 
 -- Limpiar políticas antiguas
@@ -78,7 +79,7 @@ DROP POLICY IF EXISTS "Usuarios borran sus transacciones" ON transactions;
 
 DROP POLICY IF EXISTS "Usuarios gestionan sus tareas" ON tasks;
 DROP POLICY IF EXISTS "Usuarios gestionan su memoria" ON financial_memory;
-DROP POLICY IF EXISTS "Usuarios gestionan sus logs" ON import_logs;
+-- DROP POLICY IF EXISTS "Usuarios gestionan sus logs" ON import_logs;
 DROP POLICY IF EXISTS "Usuarios gestionan sus lotes" ON import_batches;
 
 -- Crear nuevas políticas
@@ -99,7 +100,7 @@ CREATE POLICY "Usuarios borran sus transacciones" ON transactions FOR DELETE USI
 -- Otras tablas
 CREATE POLICY "Usuarios gestionan sus tareas" ON tasks FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Usuarios gestionan su memoria" ON financial_memory FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Usuarios gestionan sus logs" ON import_logs FOR ALL USING (auth.uid() = user_id);
+-- CREATE POLICY "Usuarios gestionan sus logs" ON import_logs FOR ALL USING (auth.uid() = user_id);
 
 -- ==============================================================================
 -- 4. RESTRICCIONES DE INTEGRIDAD (Constraint Único)
@@ -115,8 +116,6 @@ BEGIN
 END $$;
 
 -- Crear restricción nueva 
--- NOTA: No incluimos import_batch_id aquí para evitar que se suba la misma transacción 
--- dos veces en cargas diferentes (duplicados reales).
 ALTER TABLE transactions
 ADD CONSTRAINT unique_transaction_entry 
 UNIQUE (user_id, date, description, original_amount, type, scope);
